@@ -10,8 +10,9 @@ import re
 import tempfile
 import os
 
-# Setup Google API key
-genai.configure(api_key="AIzaSyDMRDzpIx2OuiO8xoV8UntyRYhl7LbRup8")
+# Load the API key securely from environment variable
+api_key = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=api_key)
 
 # Default theme configurations
 DEFAULT_THEMES = {
