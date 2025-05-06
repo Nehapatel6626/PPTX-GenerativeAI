@@ -4,6 +4,7 @@ from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, PP_PARAGRAPH_ALIGNMENT
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.oxml.xmlchemy import OxmlElement
 import io
 import re
@@ -178,19 +179,33 @@ def create_detailed_pptx(slides_data, theme):
     prs.slide_width = Inches(13.33)
     prs.slide_height = Inches(7.5)
     
-    # Layout mapping
-    layout_mapping = {
-        'title-only': 0,
-        'title-content': 1,
-        'section-header': 2,
-        'two-column': 3
+    # Layout mapping - now using layout indices from the presentation
+    # First, let's get the available layout indices from the presentation
+    layout_indices = {
+        'title-only': 0,  # Typically index 0 is title slide
+        'title-content': 1,  # Typically index 1 is title and content
+        'section-header': 2,  # Might not exist in all templates
+        'two-column': 3  # Might not exist in all templates
     }
     
+    # Verify which layouts actually exist in the presentation
+    available_layouts = {}
+    for name, idx in layout_indices.items():
+        if idx < len(prs.slide_layouts):
+            available_layouts[name] = idx
+    
+    # Default to title-content if requested layout isn't available
+    default_layout_idx = available_layouts.get('title-content', 0)
+    
     for slide_info in slides_data:
-        layout = slide_info.get('layout', 'title-content')
-        layout_idx = layout_mapping.get(layout, 1)
+        layout = slide_info.get('layout', 'title-content').lower()
+        layout_idx = available_layouts.get(layout, default_layout_idx)
         
-        slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+        try:
+            slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+        except IndexError:
+            # Fallback to default layout if requested layout doesn't exist
+            slide = prs.slides.add_slide(prs.slide_layouts[default_layout_idx])
         
         # Apply background
         background = slide.background
