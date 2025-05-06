@@ -3,7 +3,7 @@ import google.generativeai as genai
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
+from pptx.enum.text import PP_ALIGN, MSO_AUTO_SIZE  # Fixed auto_size issue
 from pptx.oxml.xmlchemy import OxmlElement
 import io
 import re
@@ -185,7 +185,8 @@ def create_detailed_pptx(slides_data, theme):
             title.text_frame.paragraphs[0].font.name = theme["title_font"]
 
         title.text_frame.word_wrap = True
-        title.text_frame.auto_size = True
+        title.text_frame.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT  # ✅ Corrected Here
+
         title.top = Inches(0.5)
         title.height = Inches(1.5)
         title.width = Inches(11)
