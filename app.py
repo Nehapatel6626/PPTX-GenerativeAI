@@ -1,16 +1,16 @@
-import gradio as gr
+import streamlit as st
 import google.generativeai as genai
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN, MSO_AUTO_SIZE  # Fixed auto_size issue
+from pptx.enum.text import PP_ALIGN, PP_PARAGRAPH_ALIGNMENT
 from pptx.oxml.xmlchemy import OxmlElement
 import io
 import re
 import tempfile
 import os
 
-# Setup Google API key (replace with your actual key)
+# Setup Google API key
 genai.configure(api_key="AIzaSyDMRDzpIx2OuiO8xoV8UntyRYhl7LbRup8")
 
 # Default theme configurations
@@ -49,8 +49,6 @@ DEFAULT_THEMES = {
     }
 }
 
-custom_themes = {}
-
 def hex_to_rgb(hex_color):
     """Convert hex color to RGBColor"""
     hex_color = hex_color.lstrip('#')
@@ -61,6 +59,7 @@ def extract_theme_from_pptx(uploaded_file):
     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
         tmp_file.write(uploaded_file.read())
         tmp_file_path = tmp_file.name
+    
     prs = Presentation(tmp_file_path)
     theme = {
         "background": RGBColor(0, 0, 0),  # Default black if not found
@@ -70,9 +69,13 @@ def extract_theme_from_pptx(uploaded_file):
         "title_font": "Calibri",
         "text_font": "Calibri"
     }
+    
     try:
+        # Get colors from master slide
         slide_master = prs.slide_master
         theme["background"] = slide_master.background.fill.fore_color.rgb
+        
+        # Try to get title and text colors from placeholders
         for shape in slide_master.shapes:
             if shape.has_text_frame and shape.text.strip():
                 if shape.name.lower() == 'title':
@@ -81,13 +84,17 @@ def extract_theme_from_pptx(uploaded_file):
                 else:
                     theme["text_color"] = shape.text_frame.paragraphs[0].font.color.rgb
                     theme["text_font"] = shape.text_frame.paragraphs[0].font.name
+        
+        # Try to get accent color from first shape with fill
         for shape in slide_master.shapes:
             if hasattr(shape, 'fill'):
                 if shape.fill.type == 1:  # Solid fill
                     theme["accent"] = shape.fill.fore_color.rgb
                     break
+    
     except Exception as e:
-        print(f"Warning: Couldn't fully extract theme: {str(e)}. Using default colors where needed.")
+        st.warning(f"Couldn't fully extract theme: {str(e)}. Using default colors where needed.")
+    
     os.unlink(tmp_file_path)
     return theme
 
@@ -99,6 +106,7 @@ def generate_slide_content(topic, slide_count):
     2. 3-5 detailed bullet points in [Content:] format (each point should have a brief explanation)
     3. Optional speaker notes in [Notes:] format
     4. Layout suggestion in [Layout:] format (title-only, title-content, two-column, section-header)
+    
     Structure your response like this:
     [Title:] Slide Title
     [Layout:] title-content
@@ -107,6 +115,7 @@ def generate_slide_content(topic, slide_count):
     - Main Point 2: Brief explanation of this point (keep to one line)
     - Main Point 3: Brief explanation of this point (keep to one line)
     [Notes:] Additional notes here
+    
     Include these sections (adjust based on requested slide count):
     - Title slide
     - Introduction/Overview
@@ -118,18 +127,22 @@ def generate_slide_content(topic, slide_count):
     - Future Trends (with supporting evidence)
     - Conclusion (with summary points)
     - Q&A
+    
     Ensure each bullet point follows the format:
     - Main Point: Explanation (keep explanation concise but informative)"""
+    
     response = model.generate_content(prompt)
     return response.text
 
 def parse_slide_content(slide_text):
     slides = []
     current_slide = {}
+    
     for line in slide_text.split('\n'):
         line = line.strip()
         if not line:
             continue
+            
         if line.startswith('[Title:]'):
             if current_slide:
                 slides.append(current_slide)
@@ -151,31 +164,40 @@ def parse_slide_content(slide_text):
             current_slide['layout'] = layout if layout in valid_layouts else 'title-content'
         elif current_slide.get('content') is not None and line.startswith('-'):
             current_slide['content'].append(line.strip())
+    
     if current_slide:
         slides.append(current_slide)
+    
     return slides
 
 def create_detailed_pptx(slides_data, theme):
     prs = Presentation()
+    
+    # Set widescreen layout (16:9 aspect ratio)
     prs.slide_width = Inches(13.33)
     prs.slide_height = Inches(7.5)
+    
+    # Layout mapping
     layout_mapping = {
         'title-only': 0,
         'title-content': 1,
         'section-header': 2,
         'two-column': 3
     }
-
+    
     for slide_info in slides_data:
         layout = slide_info.get('layout', 'title-content')
         layout_idx = layout_mapping.get(layout, 1)
+        
         slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
-
+        
+        # Apply background
         background = slide.background
         fill = background.fill
         fill.solid()
         fill.fore_color.rgb = theme["background"]
-
+        
+        # Set title with theme and proper formatting
         title = slide.shapes.title
         title.text = slide_info['title']
         title.text_frame.paragraphs[0].font.color.rgb = theme["title_color"]
@@ -183,163 +205,214 @@ def create_detailed_pptx(slides_data, theme):
         title.text_frame.paragraphs[0].font.bold = True
         if "title_font" in theme:
             title.text_frame.paragraphs[0].font.name = theme["title_font"]
-
+        
+        # Adjust title position to prevent overflow
         title.text_frame.word_wrap = True
-        title.text_frame.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT  # ✅ Corrected Here
-
+        title.text_frame.auto_size = True
         title.top = Inches(0.5)
         title.height = Inches(1.5)
-        title.width = Inches(11)
-
-        if layout_idx == 3:
+        title.width = Inches(11)  # Leave some margin on sides
+        
+        # Set content based on layout with proper text formatting
+        if layout_idx == 3:  # Two column layout
             content = slide_info.get('content', [])
             mid_point = len(content) // 2
             left_content = content[:mid_point]
             right_content = content[mid_point:]
-
+            
+            # Left column
             left_body = slide.placeholders[1]
             left_tf = left_body.text_frame
             left_tf.clear()
-            left_body.width = Inches(5.5)
+            left_body.width = Inches(5.5)  # Narrower columns
             left_body.left = Inches(0.5)
-
+            
+            # Right column
             right_body = slide.placeholders[2]
             right_tf = right_body.text_frame
             right_tf.clear()
-            right_body.width = Inches(5.5)
+            right_body.width = Inches(5.5)  # Narrower columns
             right_body.left = Inches(7.0)
-
+            
             for content_part, tf in [(left_content, left_tf), (right_content, right_tf)]:
                 for point in content_part:
                     p = tf.add_paragraph()
                     point_text = point.replace('- ', '').strip()
+                    # Split point if it's too long
                     if len(point_text) > 80:
                         parts = [point_text[i:i+80] for i in range(0, len(point_text), 80)]
                         p.text = parts[0]
                         for part in parts[1:]:
                             new_p = tf.add_paragraph()
                             new_p.text = part
-                            new_p.level = 1
+                            new_p.level = 1  # Indent wrapped lines
                     else:
                         p.text = point_text
+                    
                     p.level = 0
                     p.font.color.rgb = theme["text_color"]
                     p.font.size = Pt(18)
                     if "text_font" in theme:
                         p.font.name = theme["text_font"]
-                    p.space_after = Pt(6)
+                    p.space_after = Pt(6)  # Reduced spacing
                     p.space_before = Pt(6)
-        elif layout_idx != 0:
+        
+        elif layout_idx != 0:  # Not title-only
             body = slide.placeholders[1]
             tf = body.text_frame
             tf.clear()
-            body.top = Inches(2.0)
-            body.width = Inches(11)
-            body.height = Inches(4.5)
+            body.top = Inches(2.0)  # Position below title
+            body.width = Inches(11)  # Leave margins
+            body.height = Inches(4.5)  # Limit height
+            
             for point in slide_info.get('content', []):
                 p = tf.add_paragraph()
                 point_text = point.replace('- ', '').strip()
+                
+                # Handle long points by splitting them
                 if len(point_text) > 100:
                     parts = [point_text[i:i+100] for i in range(0, len(point_text), 100)]
                     p.text = parts[0]
                     for part in parts[1:]:
                         new_p = tf.add_paragraph()
                         new_p.text = part
-                        new_p.level = 1
+                        new_p.level = 1  # Indent wrapped lines
                         new_p.font.color.rgb = theme["text_color"]
-                        new_p.font.size = Pt(16)
+                        new_p.font.size = Pt(16)  # Slightly smaller for wrapped text
                         if "text_font" in theme:
                             new_p.font.name = theme["text_font"]
                 else:
                     p.text = point_text
+                
                 p.level = 0
                 p.font.color.rgb = theme["text_color"]
                 p.font.size = Pt(18)
                 if "text_font" in theme:
                     p.font.name = theme["text_font"]
-                p.space_after = Pt(6)
+                p.space_after = Pt(6)  # Reduced spacing
                 p.space_before = Pt(6)
-
+        
+        # Add notes if available
         if slide_info.get('notes'):
             notes_slide = slide.notes_slide
             notes_slide.notes_text_frame.text = slide_info['notes']
-
+    
     pptx_io = io.BytesIO()
     prs.save(pptx_io)
     pptx_io.seek(0)
     return pptx_io
 
-def process_input(topic, slide_count, theme_option, theme_name, bg_color, title_color, text_color, accent_color,
-                  title_font, text_font, uploaded_file):
-    if not topic:
-        return "Please enter a topic.", None, None
-
-    ALL_THEMES = {**DEFAULT_THEMES, **custom_themes}
-    theme = DEFAULT_THEMES["Professional Blue"]
-
-    if theme_option == "Predefined Theme":
-        theme = DEFAULT_THEMES[theme_name]
-    elif theme_option == "Custom Theme":
-        if theme_name == "Create New...":
-            custom_theme_name = "Custom_" + str(len(custom_themes))
-            custom_themes[custom_theme_name] = {
-                "background": hex_to_rgb(bg_color),
-                "title_color": hex_to_rgb(title_color),
-                "text_color": hex_to_rgb(text_color),
-                "accent": hex_to_rgb(accent_color),
-                "title_font": title_font,
-                "text_font": text_font
-            }
-            theme = custom_themes[custom_theme_name]
+def main():
+    st.set_page_config(page_title="Advanced PPTX Generator", layout="wide")
+    
+    st.title("Advanced PowerPoint Generator")
+    st.markdown("Create professional presentations with AI")
+    
+    # Initialize session state for custom themes if not exists
+    if 'custom_themes' not in st.session_state:
+        st.session_state.custom_themes = {}
+    
+    # Combine default and custom themes
+    ALL_THEMES = {**DEFAULT_THEMES, **st.session_state.custom_themes}
+    
+    col1, col2 = st.columns([3, 1])
+    
+    with col1:
+        topic = st.text_input("Presentation Topic:", 
+                            placeholder="Enter your topic (e.g., 'AI in Healthcare')")
+        
+        with st.expander("Advanced Options"):
+            slide_count = st.slider("Number of Slides:", 5, 20, 10)
+            
+            # Theme selection with example-based option
+            theme_option = st.radio("Theme Selection Method:", 
+                                  ["Predefined Theme", "Custom Theme", "Example-Based Theme"])
+            
+            theme = DEFAULT_THEMES["Professional Blue"]  # Default theme
+            
+            if theme_option == "Predefined Theme":
+                theme_name = st.selectbox("Select Theme:", list(DEFAULT_THEMES.keys()))
+                theme = DEFAULT_THEMES[theme_name]
+            elif theme_option == "Custom Theme":
+                theme_name = st.selectbox("Select Custom Theme:", 
+                                        ["Create New..."] + list(st.session_state.custom_themes.keys()))
+                
+                if theme_name == "Create New...":
+                    with st.form("custom_theme_form"):
+                        new_theme_name = st.text_input("Theme Name")
+                        bg_color = st.color_picker("Background Color", "#0C2340")
+                        title_color = st.color_picker("Title Color", "#FFFFFF")
+                        text_color = st.color_picker("Text Color", "#C8C8C8")
+                        accent_color = st.color_picker("Accent Color", "#0070C0")
+                        title_font = st.text_input("Title Font", "Calibri")
+                        text_font = st.text_input("Text Font", "Calibri")
+                        
+                        if st.form_submit_button("Save Custom Theme"):
+                            if new_theme_name:
+                                st.session_state.custom_themes[new_theme_name] = {
+                                    "background": hex_to_rgb(bg_color),
+                                    "title_color": hex_to_rgb(title_color),
+                                    "text_color": hex_to_rgb(text_color),
+                                    "accent": hex_to_rgb(accent_color),
+                                    "title_font": title_font,
+                                    "text_font": text_font
+                                }
+                                st.success(f"Theme '{new_theme_name}' saved successfully!")
+                            else:
+                                st.warning("Please enter a theme name")
+                elif theme_name in st.session_state.custom_themes:
+                    theme = st.session_state.custom_themes[theme_name]
+            else:  # Example-Based Theme
+                uploaded_file = st.file_uploader("Upload PowerPoint Template", type=["pptx"])
+                if uploaded_file:
+                    with st.spinner("Extracting theme from template..."):
+                        theme = extract_theme_from_pptx(uploaded_file)
+                        st.success("Theme extracted from template!")
+                else:
+                    st.info("Please upload a PowerPoint file to extract its theme")
+    
+    with col2:
+        st.image("https://via.placeholder.com/150?text=PPT", width=150)
+    
+    if st.button("Generate Presentation", type="primary"):
+        if not topic:
+            st.warning("Please enter a topic first!")
+        elif theme_option == "Example-Based Theme" and not uploaded_file:
+            st.warning("Please upload a PowerPoint template file first")
         else:
-            theme = custom_themes.get(theme_name, theme)
-    elif theme_option == "Example-Based Theme":
-        if uploaded_file is None:
-            return "Please upload a PowerPoint template.", None, None
-        theme = extract_theme_from_pptx(uploaded_file)
-
-    slide_text = generate_slide_content(topic, slide_count)
-    slides_data = parse_slide_content(slide_text)
-    pptx_file = create_detailed_pptx(slides_data, theme)
-
-    overview = ""
-    for i, slide in enumerate(slides_data, 1):
-        overview += f"Slide {i}: {slide['title']}\nContent:\n"
-        for point in slide.get('content', []):
-            overview += f"- {point}\n"
-        if slide.get('notes'):
-            overview += f"Notes: {slide['notes']}\n"
-        overview += "---\n"
-
-    download_name = f"{topic.replace(' ', '_')}_presentation.pptx"
-    return overview, pptx_file, download_name
-
-# Define Gradio interface
-theme_options = ["Predefined Theme", "Custom Theme", "Example-Based Theme"]
-predefined_themes = list(DEFAULT_THEMES.keys())
-
-demo = gr.Interface(
-    fn=process_input,
-    inputs=[
-        gr.Textbox(label="Presentation Topic"),
-        gr.Slider(minimum=5, maximum=20, value=10, label="Number of Slides"),
-        gr.Radio(choices=theme_options, label="Theme Selection Method"),
-        gr.Dropdown(choices=predefined_themes, label="Select Predefined Theme", visible=True),
-        gr.ColorPicker(value="#0C2340", label="Background Color"),
-        gr.ColorPicker(value="#FFFFFF", label="Title Color"),
-        gr.ColorPicker(value="#C8C8C8", label="Text Color"),
-        gr.ColorPicker(value="#0070C0", label="Accent Color"),
-        gr.Textbox(value="Calibri", label="Title Font"),
-        gr.Textbox(value="Calibri", label="Text Font"),
-        gr.File(label="Upload PowerPoint Template", file_types=[".pptx"], visible=False)
-    ],
-    outputs=[
-        gr.Textbox(label="Slide Overview (Detailed)"),
-        gr.File(label="Download PowerPoint", file_types=[".pptx"]),
-        gr.Textbox(label="Filename")
-    ],
-    allow_flagging="never"
-)
+            with st.spinner(f"Creating {slide_count}-slide presentation about '{topic}'..."):
+                try:
+                    slide_text = generate_slide_content(topic, slide_count)
+                    slides_data = parse_slide_content(slide_text)
+                    
+                    # Show slide overview with detailed content
+                    with st.expander("Slide Overview (Detailed)"):
+                        for i, slide in enumerate(slides_data, 1):
+                            st.subheader(f"Slide {i}: {slide['title']}")
+                            st.markdown("**Content:**")
+                            for point in slide.get('content', []):
+                                if ":" in point:
+                                    main_point, explanation = point.split(":", 1)
+                                    st.markdown(f"- **{main_point.strip()}**: {explanation.strip()}")
+                                else:
+                                    st.markdown(f"- {point}")
+                            if slide.get('notes'):
+                                st.markdown(f"**Notes:** {slide['notes']}")
+                            st.markdown("---")
+                    
+                    pptx_file = create_detailed_pptx(slides_data, theme)
+                    
+                    st.success("Presentation generated successfully!")
+                    
+                    st.download_button(
+                        label="Download PowerPoint",
+                        data=pptx_file,
+                        file_name=f"{topic.replace(' ', '_')}_presentation.pptx",
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    )
+                    
+                except Exception as e:
+                    st.error(f"An error occurred: {str(e)}")
 
 if __name__ == "__main__":
-    demo.launch()
+    main()
