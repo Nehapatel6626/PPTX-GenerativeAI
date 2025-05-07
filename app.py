@@ -51,54 +51,54 @@ DEFAULT_THEMES = {
     }
 }
 
-def hex_to_rgb(hex_color):
-    """Convert hex color to RGBColor"""
-    hex_color = hex_color.lstrip('#')
-    return RGBColor(*tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4)))
+# def hex_to_rgb(hex_color):
+#     """Convert hex color to RGBColor"""
+#     hex_color = hex_color.lstrip('#')
+#     return RGBColor(*tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4)))
 
-def extract_theme_from_pptx(uploaded_file):
-    """Extract theme colors and fonts from an uploaded PowerPoint file"""
-    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
-        tmp_file.write(uploaded_file.read())
-        tmp_file_path = tmp_file.name
+# def extract_theme_from_pptx(uploaded_file):
+#     """Extract theme colors and fonts from an uploaded PowerPoint file"""
+#     with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+#         tmp_file.write(uploaded_file.read())
+#         tmp_file_path = tmp_file.name
     
-    prs = Presentation(tmp_file_path)
-    theme = {
-        "background": RGBColor(0, 0, 0),  # Default black if not found
-        "title_color": RGBColor(0, 0, 0),
-        "text_color": RGBColor(0, 0, 0),
-        "accent": RGBColor(0, 0, 0),
-        "title_font": "Calibri",
-        "text_font": "Calibri"
-    }
+#     prs = Presentation(tmp_file_path)
+#     theme = {
+#         "background": RGBColor(0, 0, 0),  # Default black if not found
+#         "title_color": RGBColor(0, 0, 0),
+#         "text_color": RGBColor(0, 0, 0),
+#         "accent": RGBColor(0, 0, 0),
+#         "title_font": "Calibri",
+#         "text_font": "Calibri"
+#     }
     
-    try:
-        # Get colors from master slide
-        slide_master = prs.slide_master
-        theme["background"] = slide_master.background.fill.fore_color.rgb
+#     try:
+#         # Get colors from master slide
+#         slide_master = prs.slide_master
+#         theme["background"] = slide_master.background.fill.fore_color.rgb
         
-        # Try to get title and text colors from placeholders
-        for shape in slide_master.shapes:
-            if shape.has_text_frame and shape.text.strip():
-                if shape.name.lower() == 'title':
-                    theme["title_color"] = shape.text_frame.paragraphs[0].font.color.rgb
-                    theme["title_font"] = shape.text_frame.paragraphs[0].font.name
-                else:
-                    theme["text_color"] = shape.text_frame.paragraphs[0].font.color.rgb
-                    theme["text_font"] = shape.text_frame.paragraphs[0].font.name
+#         # Try to get title and text colors from placeholders
+#         for shape in slide_master.shapes:
+#             if shape.has_text_frame and shape.text.strip():
+#                 if shape.name.lower() == 'title':
+#                     theme["title_color"] = shape.text_frame.paragraphs[0].font.color.rgb
+#                     theme["title_font"] = shape.text_frame.paragraphs[0].font.name
+#                 else:
+#                     theme["text_color"] = shape.text_frame.paragraphs[0].font.color.rgb
+#                     theme["text_font"] = shape.text_frame.paragraphs[0].font.name
         
-        # Try to get accent color from first shape with fill
-        for shape in slide_master.shapes:
-            if hasattr(shape, 'fill'):
-                if shape.fill.type == 1:  # Solid fill
-                    theme["accent"] = shape.fill.fore_color.rgb
-                    break
+#         # Try to get accent color from first shape with fill
+#         for shape in slide_master.shapes:
+#             if hasattr(shape, 'fill'):
+#                 if shape.fill.type == 1:  # Solid fill
+#                     theme["accent"] = shape.fill.fore_color.rgb
+#                     break
     
-    except Exception as e:
-        st.warning(f"Couldn't fully extract theme: {str(e)}. Using default colors where needed.")
+#     except Exception as e:
+#         st.warning(f"Couldn't fully extract theme: {str(e)}. Using default colors where needed.")
     
-    os.unlink(tmp_file_path)
-    return theme
+#     os.unlink(tmp_file_path)
+#     return theme
 
 def generate_slide_content(topic, slide_count):
     model = genai.GenerativeModel('gemini-2.0-flash')
