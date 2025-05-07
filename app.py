@@ -439,6 +439,7 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, PP_PARAGRAPH_ALIGNMENT
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.text import MSO_AUTO_SIZE
 from pptx.oxml.xmlchemy import OxmlElement
 import io
 import re
@@ -656,7 +657,7 @@ def create_detailed_pptx(slides_data, theme):
         
         # Adjust title position to prevent overflow
         title.text_frame.word_wrap = True
-        title.text_frame.auto_size = True
+        title.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
         title.top = Inches(0.5)
         title.height = Inches(1.5)
         title.width = Inches(11)
