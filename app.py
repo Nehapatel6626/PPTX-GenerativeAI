@@ -821,8 +821,8 @@ if __name__ == "__main__":
 #                     p = tf.add_paragraph()
 #                     point_text = point.replace('- ', '').strip()
 #                    #Set the bullet text (even if it's long, let PowerPoint wrap it)
-                     p.text = point_text
-                     p.level = 0  # ensure it becomes a bullet point
+                     # p.text = point_text
+                     # p.level = 0  # ensure it becomes a bullet point
 
 #                     p.font.size = Pt(16)
 #                     p.font.color.rgb = theme["text_color"]
