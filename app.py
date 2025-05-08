@@ -688,14 +688,10 @@ import streamlit as st
 #                 for point in content_part:
 #                     p = tf.add_paragraph()
 #                     point_text = point.replace('- ', '').strip()
-#                     # Split point if it's too long
-#                     if len(point_text) > 90:
-#                         parts = re.findall('.{1,90}(?:\s+|$)', point_text)
-#                         for part in parts:
-#                             p = tf.add_paragraph()
-#                             p.text = part.strip()
-#                     else:
-#                         p.text = point_text
+#                    #Set the bullet text (even if it's long, let PowerPoint wrap it)
+                     p.text = point_text
+                     p.level = 0  # ensure it becomes a bullet point
+
 #                     p.font.size = Pt(16)
 #                     p.font.color.rgb = theme["text_color"]
 #                     p.font.name = theme["text_font"] if "text_font" in theme else 'Arial'
