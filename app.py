@@ -184,7 +184,7 @@ HF_API_TOKEN = os.getenv("HF_API_TOKEN")  # Hugging Face token in env variable
 
 # Function to generate slide text content using Gemini
 def generate_slide_content(topic, slide_count):
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     prompt = f"""Create a comprehensive presentation on '{topic}' with exactly {slide_count} slides. 
     For each slide, provide:
     1. A clear title in [Title:] format
