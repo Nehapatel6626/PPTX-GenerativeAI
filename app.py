@@ -32,7 +32,7 @@ def sidebar_nav():
 
 # Common content generation function
 def generate_content(topic, output_format, slide_count=None, page_count=None):
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-2.0-flash')
     
     if output_format == "pptx":
         prompt = f"""Create a comprehensive presentation on '{topic}' with exactly {slide_count} slides. 
