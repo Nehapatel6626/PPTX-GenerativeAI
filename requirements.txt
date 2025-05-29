@@ -3,3 +3,5 @@ python-pptx
 google-generativeai
 pillow
 requests
+docx
+fpdf 
