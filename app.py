@@ -10,11 +10,29 @@ from docx import Document
 from fpdf import FPDF
 from io import BytesIO
 
-# Configure Google Gemini API key (for text generation)
+# Configure Google Gemini API key
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-def generate_content(topic, output_format, slide_count=None, word_page_count=None):
-    model = genai.GenerativeModel('gemini-2.0-flash')
+# Set page config
+st.set_page_config(page_title="Document Generator", layout="wide")
+
+# Initialize session state for page navigation
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = "PPTX"
+
+# Sidebar navigation
+def sidebar_nav():
+    st.sidebar.title("Navigation")
+    if st.sidebar.button("PPTX Generator"):
+        st.session_state.current_page = "PPTX"
+    if st.sidebar.button("Word Generator"):
+        st.session_state.current_page = "Word"
+    if st.sidebar.button("PDF Generator"):
+        st.session_state.current_page = "PDF"
+
+# Common content generation function
+def generate_content(topic, output_format, slide_count=None, page_count=None):
+    model = genai.GenerativeModel('gemini-pro')
     
     if output_format == "pptx":
         prompt = f"""Create a comprehensive presentation on '{topic}' with exactly {slide_count} slides. 
@@ -23,32 +41,10 @@ def generate_content(topic, output_format, slide_count=None, word_page_count=Non
         2. 3-5 detailed bullet points in [Content:] format
         3. Optional speaker notes in [Notes:] format
         4. Layout suggestion in [Layout:] format (title-only, title-content, two-column, section-header)
-        
-        Structure:
-        [Title:] Slide Title
-        [Layout:] title-content
-        [Content:]
-        - Point 1
-        - Point 2
-        - Point 3
-        [Notes:] Notes here
         """
-    elif output_format == "docx":
-        prompt = f"""Create a comprehensive document on '{topic}' with approximately {word_page_count} pages of content.
+    elif output_format in ["docx", "pdf"]:
+        prompt = f"""Create a comprehensive document on '{topic}' with approximately {page_count} pages of content.
         Provide the content in the following format:
-        
-        [Heading:] Main Heading
-        [Subheading:] Subheading if any
-        [Content:] 
-        Paragraph 1 text here.
-        - Bullet point 1
-        - Bullet point 2
-        Paragraph 2 text here.
-        """
-    elif output_format == "pdf":
-        prompt = f"""Create a comprehensive report on '{topic}' suitable for a PDF document.
-        Provide the content in the following format:
-        
         [Heading:] Main Heading
         [Subheading:] Subheading if any
         [Content:] 
@@ -58,247 +54,253 @@ def generate_content(topic, output_format, slide_count=None, word_page_count=Non
         Paragraph 2 text here.
         """
     
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        st.error(f"Error generating content: {str(e)}")
+        return None
 
-def parse_pptx_content(slide_text):
-    slides = []
-    current_slide = {}
-    for line in slide_text.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith('[Title:]'):
-            if current_slide:
-                slides.append(current_slide)
-            current_slide = {'title': line.replace('[Title:]', '').strip(), 'content': [], 'notes': '', 'layout': 'title-content'}
-        elif line.startswith('[Content:]'):
-            content = line.replace('[Content:]', '').strip()
-            if content:
-                current_slide['content'].append(content)
-        elif line.startswith('[Notes:]'):
-            current_slide['notes'] = line.replace('[Notes:]', '').strip()
-        elif line.startswith('[Layout:]'):
-            layout = line.replace('[Layout:]', '').strip().lower()
-            current_slide['layout'] = layout
-        elif line.startswith('-'):
-            current_slide['content'].append(line[1:].strip())
-    if current_slide:
-        slides.append(current_slide)
-    return slides
-
-def parse_doc_content(content_text):
-    sections = []
-    current_section = {}
+# PPTX Page
+def pptx_page():
+    st.header("Text to PowerPoint Presentation")
+    topic = st.text_input("Enter Presentation Topic", key="pptx_topic")
+    slide_count = st.slider("Number of Slides", 5, 15, 7, key="pptx_slides")
     
-    for line in content_text.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        if line.startswith('[Heading:]'):
-            if current_section:
-                sections.append(current_section)
-            current_section = {'heading': line.replace('[Heading:]', '').strip(), 'subheading': '', 'content': []}
-        elif line.startswith('[Subheading:]'):
-            current_section['subheading'] = line.replace('[Subheading:]', '').strip()
-        elif line.startswith('[Content:]'):
-            content = line.replace('[Content:]', '').strip()
-            if content:
-                current_section['content'].append(content)
-        elif line.startswith('-'):
-            current_section['content'].append(line[1:].strip())
-        else:
-            current_section['content'].append(line)
-    
-    if current_section:
-        sections.append(current_section)
-    return sections
-
-def create_pptx(slides_data):
-    prs = Presentation()
-    prs.slide_width = Inches(13.33)
-    prs.slide_height = Inches(7.5)
-    
-    for slide_info in slides_data:
-        slide = prs.slides.add_slide(prs.slide_layouts[1])  # title + content layout
-        
-        # Set title
-        slide.shapes.title.text = slide_info['title']
-        slide.shapes.title.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
-        
-        # Add bullet points to content placeholder
-        content_placeholder = slide.placeholders[1].text_frame
-        content_placeholder.clear()
-        for point in slide_info['content']:
-            p = content_placeholder.add_paragraph()
-            p.text = point
-            p.level = 0
-        
-    pptx_io = io.BytesIO()
-    prs.save(pptx_io)
-    pptx_io.seek(0)
-    return pptx_io
-
-def create_docx(sections):
-    doc = Document()
-    
-    for section in sections:
-        # Add heading
-        doc.add_heading(section['heading'], level=1)
-        
-        # Add subheading if exists
-        if section['subheading']:
-            doc.add_heading(section['subheading'], level=2)
-        
-        # Add content
-        for content in section['content']:
-            if content.startswith('-'):
-                # This is a bullet point
-                doc.add_paragraph(content[1:].strip(), style='List Bullet')
-            else:
-                # Regular paragraph
-                doc.add_paragraph(content)
-        
-        # Add space between sections
-        doc.add_paragraph()
-    
-    docx_io = io.BytesIO()
-    doc.save(docx_io)
-    docx_io.seek(0)
-    return docx_io
-
-def create_pdf(sections):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    
-    for section in sections:
-        # Add heading
-        pdf.set_font("Arial", 'B', 16)
-        pdf.cell(200, 10, txt=section['heading'], ln=1, align='L')
-        pdf.set_font("Arial", size=12)
-        
-        # Add subheading if exists
-        if section['subheading']:
-            pdf.set_font("Arial", 'I', 14)
-            pdf.cell(200, 10, txt=section['subheading'], ln=1, align='L')
-            pdf.set_font("Arial", size=12)
-        
-        # Add content
-        for content in section['content']:
-            if content.startswith('-'):
-                # This is a bullet point
-                pdf.cell(10)  # indent
-                pdf.multi_cell(0, 10, txt=f"• {content[1:].strip()}")
-            else:
-                # Regular paragraph
-                pdf.multi_cell(0, 10, txt=content)
-        
-        # Add space between sections
-        pdf.ln(5)
-    
-    pdf_io = io.BytesIO()
-    pdf.output(pdf_io)
-    pdf_io.seek(0)
-    return pdf_io
-
-def main():
-    st.title("Multi-Format Document Generator with Gemini")
-    
-    # Document type selection
-    doc_type = st.radio("Select Output Format", ["PPTX Presentation", "Word Document", "PDF Report"])
-    
-    topic = st.text_input("Enter Document Topic", "")
-    
-    # Conditional parameters based on document type
-    if doc_type == "PPTX Presentation":
-        slide_count = st.slider("Number of Slides", 5, 15, 7)
-    elif doc_type == "Word Document":
-        word_page_count = st.slider("Approximate Page Count", 1, 10, 3)
-    
-    if st.button("Generate Document"):
+    if st.button("Generate Presentation", key="pptx_generate"):
         if not topic.strip():
             st.warning("Please enter a topic")
             return
         
-        with st.spinner("Generating content..."):
-            if doc_type == "PPTX Presentation":
-                output_format = "pptx"
-                content = generate_content(topic, output_format, slide_count=slide_count)
-                slides = parse_pptx_content(content)
+        with st.spinner("Generating presentation content..."):
+            content = generate_content(topic, "pptx", slide_count=slide_count)
+            if not content:
+                return
+            
+            slides = []
+            current_slide = {}
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('[Title:]'):
+                    if current_slide:
+                        slides.append(current_slide)
+                    current_slide = {
+                        'title': line.replace('[Title:]', '').strip(),
+                        'content': [],
+                        'notes': '',
+                        'layout': 'title-content'
+                    }
+                elif line.startswith('[Content:]'):
+                    content_text = line.replace('[Content:]', '').strip()
+                    if content_text:
+                        current_slide['content'].append(content_text)
+                elif line.startswith('-'):
+                    current_slide['content'].append(line[1:].strip())
+            
+            if current_slide:
+                slides.append(current_slide)
+            
+            st.success("Presentation content generated!")
+            
+            # Create PPTX
+            try:
+                prs = Presentation()
+                prs.slide_width = Inches(13.33)
+                prs.slide_height = Inches(7.5)
                 
-                st.success("Presentation content generated!")
-                st.header("Slides Preview")
-                for slide in slides:
-                    st.subheader(slide['title'])
-                    st.markdown("\n".join(f"- {c}" for c in slide['content']))
+                for slide_info in slides:
+                    slide = prs.slides.add_slide(prs.slide_layouts[1])
+                    slide.shapes.title.text = slide_info['title']
+                    content_placeholder = slide.placeholders[1].text_frame
+                    content_placeholder.clear()
+                    for point in slide_info['content']:
+                        p = content_placeholder.add_paragraph()
+                        p.text = point
+                        p.level = 0
                 
-                with st.spinner("Creating PowerPoint file..."):
-                    pptx_file = create_pptx(slides)
+                pptx_io = BytesIO()
+                prs.save(pptx_io)
+                pptx_io.seek(0)
                 
-                st.success("PowerPoint generated!")
                 st.download_button(
                     "Download PPTX", 
-                    data=pptx_file, 
+                    data=pptx_io, 
                     file_name=f"{topic.replace(' ','_')}.pptx", 
                     mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                 )
-                
-            elif doc_type == "Word Document":
-                output_format = "docx"
-                content = generate_content(topic, output_format, word_page_count=word_page_count)
-                sections = parse_doc_content(content)
-                
-                st.success("Document content generated!")
-                st.header("Document Preview")
+            except Exception as e:
+                st.error(f"Error creating PowerPoint: {str(e)}")
+
+# Word Page
+def word_page():
+    st.header("Text to Word Document")
+    topic = st.text_input("Enter Document Topic", key="word_topic")
+    page_count = st.slider("Approximate Page Count", 1, 10, 3, key="word_pages")
+    
+    if st.button("Generate Word Document", key="word_generate"):
+        if not topic.strip():
+            st.warning("Please enter a topic")
+            return
+        
+        with st.spinner("Generating document content..."):
+            content = generate_content(topic, "docx", page_count=page_count)
+            if not content:
+                return
+            
+            sections = []
+            current_section = {'heading': '', 'subheading': '', 'content': []}
+            
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('[Heading:]'):
+                    if current_section['heading'] or current_section['content']:
+                        sections.append(current_section)
+                    current_section = {
+                        'heading': line.replace('[Heading:]', '').strip(),
+                        'subheading': '',
+                        'content': []
+                    }
+                elif line.startswith('[Subheading:]'):
+                    current_section['subheading'] = line.replace('[Subheading:]', '').strip()
+                elif line.startswith('[Content:]'):
+                    content_text = line.replace('[Content:]', '').strip()
+                    if content_text:
+                        current_section['content'].append(content_text)
+                elif line.startswith('-'):
+                    current_section['content'].append(f"• {line[1:].strip()}")
+                else:
+                    current_section['content'].append(line)
+            
+            if current_section['heading'] or current_section['content']:
+                sections.append(current_section)
+            
+            st.success("Document content generated!")
+            
+            # Create DOCX
+            try:
+                doc = Document()
                 for section in sections:
-                    st.subheader(section['heading'])
+                    if section['heading']:
+                        doc.add_heading(section['heading'], level=1)
                     if section['subheading']:
-                        st.write(section['subheading'])
+                        doc.add_heading(section['subheading'], level=2)
                     for content in section['content']:
-                        if content.startswith('-'):
-                            st.markdown(f"- {content[1:]}")
+                        if content.startswith('•'):
+                            doc.add_paragraph(content, style='List Bullet')
                         else:
-                            st.write(content)
+                            doc.add_paragraph(content)
+                    doc.add_paragraph()
                 
-                with st.spinner("Creating Word document..."):
-                    docx_file = create_docx(sections)
+                docx_io = BytesIO()
+                doc.save(docx_io)
+                docx_io.seek(0)
                 
-                st.success("Word document generated!")
                 st.download_button(
                     "Download DOCX", 
-                    data=docx_file, 
+                    data=docx_io, 
                     file_name=f"{topic.replace(' ','_')}.docx", 
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
+            except Exception as e:
+                st.error(f"Error creating Word document: {str(e)}")
+
+# PDF Page
+def pdf_page():
+    st.header("Text to PDF Report")
+    topic = st.text_input("Enter Report Topic", key="pdf_topic")
+    page_count = st.slider("Approximate Page Count", 1, 10, 3, key="pdf_pages")
+    
+    if st.button("Generate PDF Report", key="pdf_generate"):
+        if not topic.strip():
+            st.warning("Please enter a topic")
+            return
+        
+        with st.spinner("Generating report content..."):
+            content = generate_content(topic, "pdf", page_count=page_count)
+            if not content:
+                return
+            
+            sections = []
+            current_section = {'heading': '', 'subheading': '', 'content': []}
+            
+            for line in content.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith('[Heading:]'):
+                    if current_section['heading'] or current_section['content']:
+                        sections.append(current_section)
+                    current_section = {
+                        'heading': line.replace('[Heading:]', '').strip(),
+                        'subheading': '',
+                        'content': []
+                    }
+                elif line.startswith('[Subheading:]'):
+                    current_section['subheading'] = line.replace('[Subheading:]', '').strip()
+                elif line.startswith('[Content:]'):
+                    content_text = line.replace('[Content:]', '').strip()
+                    if content_text:
+                        current_section['content'].append(content_text)
+                elif line.startswith('-'):
+                    current_section['content'].append(f"• {line[1:].strip()}")
+                else:
+                    current_section['content'].append(line)
+            
+            if current_section['heading'] or current_section['content']:
+                sections.append(current_section)
+            
+            st.success("Report content generated!")
+            
+            # Create PDF
+            try:
+                pdf = FPDF()
+                pdf.add_page()
+                pdf.set_font("Arial", size=12)
                 
-            elif doc_type == "PDF Report":
-                output_format = "pdf"
-                content = generate_content(topic, output_format)
-                sections = parse_doc_content(content)
-                
-                st.success("Report content generated!")
-                st.header("Report Preview")
                 for section in sections:
-                    st.subheader(section['heading'])
+                    if section['heading']:
+                        pdf.set_font("Arial", 'B', 16)
+                        pdf.cell(200, 10, txt=section['heading'], ln=1, align='L')
+                        pdf.set_font("Arial", size=12)
                     if section['subheading']:
-                        st.write(section['subheading'])
+                        pdf.set_font("Arial", 'I', 14)
+                        pdf.cell(200, 10, txt=section['subheading'], ln=1, align='L')
+                        pdf.set_font("Arial", size=12)
                     for content in section['content']:
-                        if content.startswith('-'):
-                            st.markdown(f"- {content[1:]}")
+                        if content.startswith('•'):
+                            pdf.cell(10)
+                            pdf.multi_cell(0, 10, txt=content)
                         else:
-                            st.write(content)
+                            pdf.multi_cell(0, 10, txt=content)
+                    pdf.ln(5)
                 
-                with st.spinner("Creating PDF document..."):
-                    pdf_file = create_pdf(sections)
+                pdf_io = BytesIO()
+                pdf.output(pdf_io)
+                pdf_io.seek(0)
                 
-                st.success("PDF generated!")
                 st.download_button(
                     "Download PDF", 
-                    data=pdf_file, 
+                    data=pdf_io, 
                     file_name=f"{topic.replace(' ','_')}.pdf", 
                     mime="application/pdf"
                 )
+            except Exception as e:
+                st.error(f"Error creating PDF: {str(e)}")
+
+# Main App
+def main():
+    sidebar_nav()
+    
+    if st.session_state.current_page == "PPTX":
+        pptx_page()
+    elif st.session_state.current_page == "Word":
+        word_page()
+    elif st.session_state.current_page == "PDF":
+        pdf_page()
 
 if __name__ == "__main__":
     main()
