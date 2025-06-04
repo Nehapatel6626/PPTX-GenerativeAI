@@ -340,22 +340,22 @@ if page == "Introduction":
     st.write("Select a feature from the sidebar to begin generating documents or searching for images.")
     
 # Placeholder for other pages
-elif page == "Text to PPT":
+elif page == "pages/1_📊_Text_to_PPT.py":
     st.title("Text to PPT")
     st.write("Enter your text below to generate a PowerPoint presentation.")
     # Add PPT generation logic here (e.g., using python-pptx)
     
-elif page == "Text to PDF":
+elif page == "pages/3_📄_Text_to_PDF.py":
     st.title("Text to PDF")
     st.write("Enter your text below to generate a PDF document.")
     # Add PDF generation logic here (e.g., using reportlab)
     
-elif page == "Text to Word":
+elif page == "pages/2_📝_Text_to_Word.py":
     st.title("Text to Word")
     st.write("Enter your text below to generate a Word document.")
     # Add Word generation logic here (e.g., using python-docx)
     
-elif page == "Pexels Image Search":
+elif page == "pages/4_🖼_text_to_Image_Search.py":
     st.title("Pexels Image Search")
     st.write("Search for images on Pexels and download them for your projects.")
     # Add Pexels API integration here
