@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
+from reportlab.lib.units import inch  # Added import for inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from docx import Document
