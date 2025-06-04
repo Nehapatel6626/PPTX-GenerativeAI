@@ -4,58 +4,8 @@ from PIL import Image
 from io import BytesIO
 import os
 
-# Set up the page with custom CSS to preserve background
+# Set up the page with default Streamlit styling
 st.set_page_config(page_title="Pexels Image Search", layout="wide")
-
-# Custom CSS to maintain background
-st.markdown("""
-<style>
-    /* Main container styling */
-    .main .block-container {
-        background-color: transparent !important;
-        padding-top: 2rem;
-    }
-    
-    /* Image styling */
-    .stImage>img {
-        border-radius: 8px;
-        box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.1);
-        transition: transform 0.3s;
-        cursor: pointer;
-    }
-    .stImage>img:hover {
-        transform: scale(1.02);
-    }
-    
-    /* Expander styling */
-    [data-testid="stExpander"] {
-        background-color: rgba(248, 249, 250, 0.9);
-        border-radius: 8px;
-        padding: 10px;
-        margin-top: 5px;
-    }
-    
-    /* Sidebar styling - make it blend with background */
-    [data-testid="stSidebar"] {
-        background-color: rgba(248, 249, 250, 0.9) !important;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.1);
-    }
-    
-    /* Title styling */
-    h1, h2, h3 {
-        color: inherit !important;
-    }
-    
-    /* Button styling */
-    .stButton>button {
-        width: 100%;
-        border: 1px solid #ddd !important;
-    }
-</style>
-""", unsafe_allow_html=True)
-
 st.title("📷 Pexels Image Search with Attribution")
 st.write("Search for images and properly credit the photographers")
 
@@ -102,8 +52,8 @@ if search_query:
                     response = requests.get(img_url, timeout=10)
                     img = Image.open(BytesIO(response.content))
                     
-                    # Display clickable image
-                    st.image(
+                    # Display image with clickable option
+                    clicked = st.image(
                         img,
                         caption=f"{photo['photographer']} - {photo['alt'][:50]}...",
                         use_container_width=True
@@ -143,14 +93,14 @@ if search_query:
     elif results:
         st.warning("No results found")
 
-# Image details sidebar (now more transparent)
+# Image details sidebar (using default Streamlit styling)
 if st.session_state.selected_image:
     photo = st.session_state.selected_image
     with st.sidebar:
         st.title("Image Details")
         
         try:
-            img_url = photo['src']['large']  # Using large instead of original for faster loading
+            img_url = photo['src']['large']
             response = requests.get(img_url, timeout=10)
             img = Image.open(BytesIO(response.content))
             st.image(img, use_container_width=True)
@@ -179,3 +129,16 @@ if st.session_state.selected_image:
         if st.button("Close Details", use_container_width=True):
             st.session_state.selected_image = None
             st.rerun()
+
+# Minimal styling that doesn't override defaults
+st.markdown("""
+<style>
+    .stImage>img {
+        border-radius: 8px;
+        transition: transform 0.3s;
+    }
+    .stImage>img:hover {
+        transform: scale(1.02);
+    }
+</style>
+""", unsafe_allow_html=True)
