@@ -1010,7 +1010,6 @@
 
 
 ###################################################################################################################################################################
-
 import streamlit as st
 import google.generativeai as genai
 from pptx import Presentation
@@ -1025,6 +1024,9 @@ import re
 import tempfile
 import os
 from PIL import Image
+import time
+import json
+from hashlib import sha256
 
 # Load the API key securely from environment variable
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -1067,6 +1069,13 @@ DEFAULT_THEMES = {
         "title_font": "Consolas",
         "text_font": "Consolas"
     }
+}
+
+# PowerPoint compatibility options
+PPT_VERSIONS = {
+    "Modern (2013+)": {"aspect_ratio": (13.33, 7.5)},
+    "Standard (2007-2013)": {"aspect_ratio": (10, 7.5)},
+    "Legacy (2003)": {"aspect_ratio": (10, 7.5)}
 }
 
 def hex_to_rgb(hex_color):
@@ -1128,8 +1137,12 @@ def extract_theme_from_pptx(uploaded_file):
     
     return theme
 
-def generate_slide_content(topic, slide_count):
-    model = genai.GenerativeModel('gemini-2.0-flash')
+@st.cache_data(ttl=3600, show_spinner="Generating slide content...")
+def generate_slide_content(topic, slide_count, _model=None):
+    """Generate slide content with caching"""
+    if _model is None:
+        _model = genai.GenerativeModel('gemini-2.0-flash')
+    
     prompt = f"""Create a comprehensive presentation on '{topic}' with exactly {slide_count} slides. 
     For each slide, provide:
     1. A clear title in [Title:] format
@@ -1200,7 +1213,7 @@ def generate_slide_content(topic, slide_count):
     Begin the content generation now.
     """
     
-    response = model.generate_content(prompt)
+    response = _model.generate_content(prompt)
     return response.text
 
 def parse_slide_content(slide_text):
@@ -1433,7 +1446,7 @@ def create_answer_key_slide(prs, questions, theme):
     
     return slide
 
-def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
+def create_detailed_pptx(slides_data, questions, theme, branding_options=None, ppt_version="Modern (2013+)"):
     """Create PowerPoint using the uploaded template"""
     # Use the template if one was uploaded
     if "template_path" in theme and os.path.exists(theme["template_path"]):
@@ -1441,9 +1454,10 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
     else:
         prs = Presentation()
     
-    # Set widescreen layout (16:9 aspect ratio)
-    prs.slide_width = Inches(13.33)
-    prs.slide_height = Inches(7.5)
+    # Set aspect ratio based on selected version
+    aspect_ratio = PPT_VERSIONS[ppt_version]["aspect_ratio"]
+    prs.slide_width = Inches(aspect_ratio[0])
+    prs.slide_height = Inches(aspect_ratio[1])
     
     # Layout mapping
     layout_indices = {
@@ -1461,7 +1475,7 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
     default_layout_idx = available_layouts.get('title-content', 0)
     
     # Create main slides
-    for slide_info in slides_data:
+    for i, slide_info in enumerate(slides_data, 1):
         layout = slide_info.get('layout', 'title-content').lower()
         layout_idx = available_layouts.get(layout, default_layout_idx)
         
@@ -1580,6 +1594,53 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
     
     return pptx_io
 
+def regenerate_slide(slide_index, topic, slide_count, theme, ppt_version):
+    """Regenerate a specific slide using AI"""
+    model = genai.GenerativeModel('gemini-2.0-flash')
+    prompt = f"""We are creating a presentation on '{topic}' with {slide_count} slides. 
+    Please regenerate only slide number {slide_index+1} with the same structure as the others.
+    The slide should have:
+    - A clear title in [Title:] format
+    - 3-5 detailed bullet points in [Content:] format
+    - Optional speaker notes in [Notes:] format
+    - Layout suggestion in [Layout:] format
+    
+    Format:
+    [Title:] Slide Title
+    [Layout:] layout-type
+    [Content:]
+    - Point 1
+    - Point 2
+    [Notes:] Optional notes
+    
+    Make sure the content is relevant to the overall topic and flows with the presentation.
+    """
+    
+    response = model.generate_content(prompt)
+    new_slide_text = response.text
+    
+    # Parse the new slide
+    new_slide = {'title': '', 'content': [], 'notes': '', 'layout': 'title-content'}
+    for line in new_slide_text.split('\n'):
+        line = line.strip()
+        if line.startswith('[Title:]'):
+            new_slide['title'] = line.replace('[Title:]', '').strip()
+        elif line.startswith('[Content:]'):
+            pass  # Content follows on subsequent lines
+        elif line.startswith('[Notes:]'):
+            new_slide['notes'] = line.replace('[Notes:]', '').strip()
+        elif line.startswith('[Layout:]'):
+            layout = line.replace('[Layout:]', '').strip().lower()
+            valid_layouts = ['title-only', 'title-content', 'two-column', 'section-header']
+            new_slide['layout'] = layout if layout in valid_layouts else 'title-content'
+        elif line.startswith('-'):
+            point = line[1:].strip()
+            if ':' in point:
+                point = point.split(':')[0].strip()
+            new_slide['content'].append(point)
+    
+    return new_slide
+
 def main():
     st.set_page_config(page_title="Advanced PPTX Generator", layout="wide")
     
@@ -1589,6 +1650,18 @@ def main():
     # Initialize session state for custom themes if not exists
     if 'custom_themes' not in st.session_state:
         st.session_state.custom_themes = {}
+    
+    # Initialize session state for presentation data
+    if 'slides_data' not in st.session_state:
+        st.session_state.slides_data = []
+    if 'questionnaire' not in st.session_state:
+        st.session_state.questionnaire = []
+    if 'answer_key' not in st.session_state:
+        st.session_state.answer_key = []
+    if 'pptx_file' not in st.session_state:
+        st.session_state.pptx_file = None
+    if 'regenerate_map' not in st.session_state:
+        st.session_state.regenerate_map = {}
     
     # Combine default and custom themes
     ALL_THEMES = {**DEFAULT_THEMES, **st.session_state.custom_themes}
@@ -1648,6 +1721,14 @@ def main():
                         st.success("Theme extracted from template!")
                 else:
                     st.info("Please upload a PowerPoint file to extract its theme")
+            
+            # PowerPoint version compatibility
+            ppt_version = st.selectbox(
+                "PowerPoint Version Compatibility:",
+                list(PPT_VERSIONS.keys()),
+                index=0
+            )
+            st.caption("Modern (2013+): Widescreen (16:9)\nStandard (2007-2013): Standard (4:3)\nLegacy (2003): Standard (4:3)")
     
     with col2:
         st.markdown("### Instructions")
@@ -1655,6 +1736,7 @@ def main():
         st.markdown("2. Select slide count and theme")
         st.markdown("3. Click 'Generate Presentation'")
         st.markdown("4. Download your PowerPoint file")
+        st.markdown("5. Use 'Regenerate' buttons to improve specific slides")
     
     if st.button("Generate Presentation", type="primary", key="generate_btn"):
         if not topic:
@@ -1662,53 +1744,106 @@ def main():
         elif theme_option == "Example-Based Theme" and not uploaded_file:
             st.warning("Please upload a PowerPoint template file first")
         else:
-            with st.spinner(f"Creating {slide_count}-slide presentation about '{topic}'..."):
-                try:
-                    slide_text = generate_slide_content(topic, slide_count)
-                    slides_data, questionnaire, answer_key = parse_slide_content(slide_text)
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
+            # Generate slide content
+            status_text.text("Generating content with AI...")
+            progress_bar.progress(20)
+            model = genai.GenerativeModel('gemini-2.0-flash')
+            slide_text = generate_slide_content(topic, slide_count, _model=model)
+            
+            # Parse slide content
+            status_text.text("Parsing slide content...")
+            progress_bar.progress(40)
+            slides_data, questionnaire, answer_key = parse_slide_content(slide_text)
+            
+            # Store in session state
+            st.session_state.slides_data = slides_data
+            st.session_state.questionnaire = questionnaire
+            st.session_state.answer_key = answer_key
+            st.session_state.regenerate_map = {i: False for i in range(len(slides_data))}
+            
+            # Create PowerPoint
+            status_text.text("Creating PowerPoint file...")
+            progress_bar.progress(70)
+            pptx_file = create_detailed_pptx(slides_data, questionnaire, theme, ppt_version=ppt_version)
+            st.session_state.pptx_file = pptx_file
+            
+            progress_bar.progress(100)
+            status_text.text("Done!")
+            time.sleep(0.5)
+            progress_bar.empty()
+            status_text.empty()
+            
+            st.success("Presentation generated successfully!")
+    
+    # Show slide overview with regeneration options
+    if st.session_state.slides_data:
+        with st.expander("Slide Overview (Click to Expand)", expanded=True):
+            st.markdown(f"**Total Slides:** {len(st.session_state.slides_data)} content slides + "
+                        f"{len(st.session_state.questionnaire)} question slides + 1 answer key slide")
+            
+            for i, slide in enumerate(st.session_state.slides_data):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.subheader(f"Slide {i+1}: {slide['title']}")
+                    st.markdown("**Content:**")
+                    for point in slide.get('content', []):
+                        st.markdown(f"- {point}")
+                    if slide.get('notes'):
+                        st.markdown(f"**Notes:** {slide['notes']}")
+                
+                with col2:
+                    if st.button(f"Regenerate", key=f"reg_{i}"):
+                        with st.spinner(f"Regenerating slide {i+1}..."):
+                            new_slide = regenerate_slide(i, topic, slide_count, theme, ppt_version)
+                            st.session_state.slides_data[i] = new_slide
+                            st.session_state.regenerate_map[i] = True
+                            st.rerun()
                     
-                    # Show slide overview with detailed content
-                    with st.expander("Slide Overview (Detailed)"):
-                        st.markdown(f"**Total Slides:** {len(slides_data)} content slides + {len(questionnaire)} question slides + 1 answer key slide")
-                        
-                        for i, slide in enumerate(slides_data, 1):
-                            st.subheader(f"Slide {i}: {slide['title']}")
-                            st.markdown("**Content:**")
-                            for point in slide.get('content', []):
-                                st.markdown(f"- {point}")
-                            if slide.get('notes'):
-                                st.markdown(f"**Notes:** {slide['notes']}")
-                            st.markdown("---")
-                        
-                        if questionnaire:
-                            st.subheader("Questionnaire")
-                            st.markdown(f"**Total Questions:** {len(questionnaire)}")
-                            for i, q in enumerate(questionnaire, 1):
-                                st.subheader(f"Question {i}")
-                                st.markdown(f"**{q['text']}**")
-                                for j, opt in enumerate(q['options']):
-                                    st.markdown(f"{chr(65+j)}. {opt}")
-                                st.markdown(f"*Correct: {q['correct']}*")
-                                st.markdown("---")
-                            
-                            if answer_key:
-                                st.subheader("Answer Key")
-                                for i, ans in enumerate(answer_key, 1):
-                                    st.markdown(f"{i}. {ans}")
-                    
-                    pptx_file = create_detailed_pptx(slides_data, questionnaire, theme)
-                    
-                    st.success("Presentation generated successfully!")
-                    
-                    st.download_button(
-                        label="Download PowerPoint",
-                        data=pptx_file,
-                        file_name=f"{topic.replace(' ', '_')}_presentation.pptx",
-                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-                    )
-                    
-                except Exception as e:
-                    st.error(f"An error occurred: {str(e)}")
+                    # Show regeneration status
+                    if st.session_state.regenerate_map.get(i, False):
+                        st.success("Regenerated!")
+                
+                st.markdown("---")
+            
+            if st.session_state.questionnaire:
+                st.subheader("Questionnaire")
+                st.markdown(f"**Total Questions:** {len(st.session_state.questionnaire)}")
+                for i, q in enumerate(st.session_state.questionnaire, 1):
+                    st.subheader(f"Question {i}")
+                    st.markdown(f"**{q['text']}**")
+                    for j, opt in enumerate(q['options']):
+                        st.markdown(f"{chr(65+j)}. {opt}")
+                    st.markdown(f"*Correct: {q['correct']}*")
+                    st.markdown("---")
+                
+                if st.session_state.answer_key:
+                    st.subheader("Answer Key")
+                    for i, ans in enumerate(st.session_state.answer_key, 1):
+                        st.markdown(f"{i}. {ans}")
+    
+    # Rebuild PPTX if any slides were regenerated
+    if any(st.session_state.regenerate_map.values()):
+        with st.spinner("Updating presentation with regenerated slides..."):
+            pptx_file = create_detailed_pptx(
+                st.session_state.slides_data,
+                st.session_state.questionnaire,
+                theme,
+                ppt_version=ppt_version
+            )
+            st.session_state.pptx_file = pptx_file
+            st.success("Presentation updated with regenerated slides!")
+    
+    # Download button
+    if st.session_state.pptx_file:
+        st.download_button(
+            label="Download PowerPoint",
+            data=st.session_state.pptx_file,
+            file_name=f"{topic.replace(' ', '_')}_presentation.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
 
 if __name__ == "__main__":
     main()
