@@ -1334,26 +1334,25 @@ def create_question_slide(prs, question, question_num, theme):
     
     # Remove unused placeholders
     for shape in slide.shapes:
-        if shape.has_text_frame and not shape.text.strip() and shape != getattr(slide, 'shapes', None):
+        if shape.has_text_frame and not shape.text.strip():
             sp = shape._element
             sp.getparent().remove(sp)
     
     # Set title
-    title = slide.shapes.title if hasattr(slide, 'shapes') and hasattr(slide.shapes, 'title') else None
+    title = slide.shapes.title if hasattr(slide.shapes, 'title') else None
     if title:
         title.text = f"Question {question_num}"
     
     # Only apply custom formatting if not using a template
-    if "template_path" not in theme:
-        if title:
-            title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
-            title.text_frame.paragraphs[0].font.size = Pt(36)
-            title.text_frame.paragraphs[0].font.bold = True
-            if "title_font" in theme:
-                title.text_frame.paragraphs[0].font.name = theme["title_font"]
-            
-            # Add decorative line under title
-            add_title_separator(slide, title, theme["accent"])
+    if "template_path" not in theme and title:
+        title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+        title.text_frame.paragraphs[0].font.size = Pt(36)
+        title.text_frame.paragraphs[0].font.bold = True
+        if "title_font" in theme:
+            title.text_frame.paragraphs[0].font.name = theme["title_font"]
+        
+        # Add decorative line under title
+        add_title_separator(slide, title, theme["accent"])
     
     # Create content
     left = Inches(1)
@@ -1412,26 +1411,25 @@ def create_answer_key_slide(prs, questions, theme):
     
     # Remove unused placeholders
     for shape in slide.shapes:
-        if shape.has_text_frame and not shape.text.strip() and shape != getattr(slide, 'shapes', None):
+        if shape.has_text_frame and not shape.text.strip():
             sp = shape._element
             sp.getparent().remove(sp)
     
     # Set title
-    title = slide.shapes.title if hasattr(slide, 'shapes') and hasattr(slide.shapes, 'title') else None
+    title = slide.shapes.title if hasattr(slide.shapes, 'title') else None
     if title:
         title.text = "Answer Key"
     
     # Only apply custom formatting if not using a template
-    if "template_path" not in theme:
-        if title:
-            title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
-            title.text_frame.paragraphs[0].font.size = Pt(36)
-            title.text_frame.paragraphs[0].font.bold = True
-            if "title_font" in theme:
-                title.text_frame.paragraphs[0].font.name = theme["title_font"]
-            
-            # Add decorative line under title
-            add_title_separator(slide, title, theme["accent"])
+    if "template_path" not in theme and title:
+        title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+        title.text_frame.paragraphs[0].font.size = Pt(36)
+        title.text_frame.paragraphs[0].font.bold = True
+        if "title_font" in theme:
+            title.text_frame.paragraphs[0].font.name = theme["title_font"]
+        
+        # Add decorative line under title
+        add_title_separator(slide, title, theme["accent"])
     
     # Create content
     left = Inches(1.5)
@@ -1500,27 +1498,29 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
         
         # Remove unused placeholders
         for shape in slide.shapes:
-            if shape.has_text_frame and not shape.text.strip() and shape != getattr(slide, 'shapes', None):
+            if shape.has_text_frame and not shape.text.strip():
                 sp = shape._element
                 sp.getparent().remove(sp)
         
+        # Try to get the title placeholder
+        title_placeholder = slide.shapes.title if hasattr(slide.shapes, 'title') else None
+        
         # Set title if placeholder exists
-        if hasattr(slide, 'shapes') and hasattr(slide.shapes, 'title'):
-            title = slide.shapes.title
-            title.text = slide_info['title']
-            title.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
+        if title_placeholder is not None:
+            title_placeholder.text = slide_info['title']
+            title_placeholder.text_frame.paragraphs[0].alignment = PP_ALIGN.CENTER
             
             # Only apply custom formatting if not using a template
             if "template_path" not in theme:
                 # Format title
-                title.text_frame.paragraphs[0].font.color.rgb = theme["title_color"]
-                title.text_frame.paragraphs[0].font.size = Pt(36)
-                title.text_frame.paragraphs[0].font.bold = True
+                title_placeholder.text_frame.paragraphs[0].font.color.rgb = theme["title_color"]
+                title_placeholder.text_frame.paragraphs[0].font.size = Pt(36)
+                title_placeholder.text_frame.paragraphs[0].font.bold = True
                 if "title_font" in theme:
-                    title.text_frame.paragraphs[0].font.name = theme["title_font"]
+                    title_placeholder.text_frame.paragraphs[0].font.name = theme["title_font"]
                 
                 # Add decorative line under title
-                add_title_separator(slide, title, theme["accent"])
+                add_title_separator(slide, title_placeholder, theme["accent"])
         else:
             # Add title manually if no placeholder
             left = Inches(1)
@@ -1536,7 +1536,8 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             p.font.size = Pt(36)
             if "title_font" in theme:
                 p.font.name = theme["title_font"]
-            p.font.color.rgb = theme["title_color"]
+            if "title_color" in theme:
+                p.font.color.rgb = theme["title_color"]
         
         # Only apply custom formatting if not using a template
         if "template_path" not in theme:
@@ -1616,14 +1617,14 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
         except IndexError:
             section_slide = prs.slides.add_slide(prs.slide_layouts[0])  # Fallback to title slide
         
-        if hasattr(section_slide, 'shapes') and hasattr(section_slide.shapes, 'title'):
-            section_title = section_slide.shapes.title
-            section_title.text = "Knowledge Check"
+        title_placeholder = section_slide.shapes.title if hasattr(section_slide.shapes, 'title') else None
+        if title_placeholder is not None:
+            title_placeholder.text = "Knowledge Check"
             
             # Format section header
             if "template_path" not in theme:
-                section_title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
-                section_title.text_frame.paragraphs[0].font.size = Pt(44)
+                title_placeholder.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+                title_placeholder.text_frame.paragraphs[0].font.size = Pt(44)
         
         # Add each question on a separate slide
         for i, question in enumerate(questions, 1):
@@ -1786,46 +1787,47 @@ def main():
         st.markdown("4. Download your PowerPoint file")
         st.markdown("5. Use 'Regenerate' buttons to improve specific slides")
     
-    if st.button("Generate Presentation", type="primary", key="generate_btn"):
+    generate_btn = st.button("Generate Presentation", type="primary", key="generate_btn")
+    if generate_btn:
         if not topic:
             st.warning("Please enter a topic first!")
         elif theme_option == "Example-Based Theme" and not uploaded_file:
             st.warning("Please upload a PowerPoint template file first")
         else:
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            # Generate slide content
-            status_text.text("Generating content with AI...")
-            progress_bar.progress(20)
-            model = genai.GenerativeModel('gemini-2.0-flash')
-            slide_text = generate_slide_content(topic, slide_count, _model=model)
-            
-            # Parse slide content
-            status_text.text("Parsing slide content...")
-            progress_bar.progress(40)
-            slides_data, questionnaire, answer_key = parse_slide_content(slide_text)
-            
-            # Store in session state
-            st.session_state.slides_data = slides_data
-            st.session_state.questionnaire = questionnaire
-            st.session_state.answer_key = answer_key
-            st.session_state.regenerate_map = {i: False for i in range(len(slides_data))}
-            
-            # Create PowerPoint
-            status_text.text("Creating PowerPoint file...")
-            progress_bar.progress(70)
-            pptx_file = create_detailed_pptx(slides_data, questionnaire, theme, ppt_version=ppt_version)
-            st.session_state.pptx_file = pptx_file
-            
-            progress_bar.progress(100)
-            status_bar = st.empty()
-            status_bar.success("Done!")
-            time.sleep(1)
-            progress_bar.empty()
-            status_bar.empty()
-            
-            st.success("Presentation generated successfully!")
+            with st.spinner("Generating your presentation..."):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                
+                # Generate slide content
+                status_text.text("Generating content with AI...")
+                progress_bar.progress(20)
+                model = genai.GenerativeModel('gemini-2.0-flash')
+                slide_text = generate_slide_content(topic, slide_count, _model=model)
+                
+                # Parse slide content
+                status_text.text("Parsing slide content...")
+                progress_bar.progress(40)
+                slides_data, questionnaire, answer_key = parse_slide_content(slide_text)
+                
+                # Store in session state
+                st.session_state.slides_data = slides_data
+                st.session_state.questionnaire = questionnaire
+                st.session_state.answer_key = answer_key
+                st.session_state.regenerate_map = {i: False for i in range(len(slides_data))}
+                
+                # Create PowerPoint
+                status_text.text("Creating PowerPoint file...")
+                progress_bar.progress(70)
+                pptx_file = create_detailed_pptx(slides_data, questionnaire, theme, ppt_version=ppt_version)
+                st.session_state.pptx_file = pptx_file
+                
+                progress_bar.progress(100)
+                status_text.text("Done!")
+                time.sleep(1)
+                progress_bar.empty()
+                status_text.empty()
+                
+                st.success("Presentation generated successfully!")
     
     # Show slide overview with regeneration options
     if st.session_state.slides_data:
