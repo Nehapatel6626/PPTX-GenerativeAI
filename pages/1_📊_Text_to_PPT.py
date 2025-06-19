@@ -1018,11 +1018,13 @@ from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN, PP_PARAGRAPH_ALIGNMENT
 from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.oxml.xmlchemy import OxmlElement
 import io
 import re
 import tempfile
 import os
+from PIL import Image
 
 # Load the API key securely from environment variable
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -1295,9 +1297,29 @@ def parse_slide_content(slide_text):
     
     return slides, questionnaire, answer_key
 
+def add_title_separator(slide, title_shape, accent_color):
+    """Add a decorative line under the title"""
+    line = slide.shapes.add_shape(
+        MSO_SHAPE.RECTANGLE, 
+        title_shape.left, 
+        title_shape.top + title_shape.height - Pt(5),
+        title_shape.width,
+        Pt(3)
+    )
+    fill = line.fill
+    fill.solid()
+    fill.fore_color.rgb = accent_color
+    line.line.fill.background()
+
 def create_question_slide(prs, question, question_num, theme):
     """Create a slide for a single question"""
     slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
+    
+    # Remove unused placeholders
+    for shape in slide.shapes:
+        if shape.has_text_frame and not shape.text.strip() and shape != slide.shapes.title:
+            sp = shape._element
+            sp.getparent().remove(sp)
     
     # Set title
     title = slide.shapes.title
@@ -1310,16 +1332,23 @@ def create_question_slide(prs, question, question_num, theme):
         title.text_frame.paragraphs[0].font.bold = True
         if "title_font" in theme:
             title.text_frame.paragraphs[0].font.name = theme["title_font"]
+        
+        # Add decorative line under title
+        add_title_separator(slide, title, theme["accent"])
     
     # Create content
-    body = slide.placeholders[1]
-    tf = body.text_frame
-    tf.clear()
+    left = Inches(1)
+    top = Inches(2)
+    width = prs.slide_width - Inches(2)
+    height = prs.slide_height - Inches(3)
+    
+    content_box = slide.shapes.add_textbox(left, top, width, height)
+    tf = content_box.text_frame
+    tf.word_wrap = True
     
     # Add question text
     p = tf.add_paragraph()
     p.text = question['text']
-    p.level = 0
     p.font.bold = True
     p.space_after = Pt(24)
     
@@ -1335,6 +1364,7 @@ def create_question_slide(prs, question, question_num, theme):
         p = tf.add_paragraph()
         p.text = f"{chr(65+j)}. {opt}"
         p.level = 0
+        p.space_before = Pt(12)
         p.space_after = Pt(12)
         
         # Only apply custom formatting if not using a template
@@ -1355,6 +1385,12 @@ def create_answer_key_slide(prs, questions, theme):
     """Create answer key slide with all correct answers"""
     slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
     
+    # Remove unused placeholders
+    for shape in slide.shapes:
+        if shape.has_text_frame and not shape.text.strip() and shape != slide.shapes.title:
+            sp = shape._element
+            sp.getparent().remove(sp)
+    
     # Set title
     title = slide.shapes.title
     title.text = "Answer Key"
@@ -1366,23 +1402,32 @@ def create_answer_key_slide(prs, questions, theme):
         title.text_frame.paragraphs[0].font.bold = True
         if "title_font" in theme:
             title.text_frame.paragraphs[0].font.name = theme["title_font"]
+        
+        # Add decorative line under title
+        add_title_separator(slide, title, theme["accent"])
     
     # Create content
-    body = slide.placeholders[1]
-    tf = body.text_frame
-    tf.clear()
+    left = Inches(1.5)
+    top = Inches(2)
+    width = prs.slide_width - Inches(3)
+    height = prs.slide_height - Inches(3)
+    
+    content_box = slide.shapes.add_textbox(left, top, width, height)
+    tf = content_box.text_frame
+    tf.word_wrap = True
     
     # Add answer key
     for i, q in enumerate(questions):
         p = tf.add_paragraph()
         p.text = f"Question {i+1}: {q['correct']}"
         p.level = 0
-        p.space_after = Pt(12)
+        p.space_after = Pt(18)
         
         # Only apply custom formatting if not using a template
         if "template_path" not in theme:
             p.font.color.rgb = theme["text_color"]
             p.font.size = Pt(24)
+            p.font.bold = True
             if "text_font" in theme:
                 p.font.name = theme["text_font"]
     
@@ -1425,6 +1470,12 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
         except IndexError:
             slide = prs.slides.add_slide(prs.slide_layouts[default_layout_idx])
         
+        # Remove unused placeholders
+        for shape in slide.shapes:
+            if shape.has_text_frame and not shape.text.strip() and shape != slide.shapes.title:
+                sp = shape._element
+                sp.getparent().remove(sp)
+        
         # Set title
         title = slide.shapes.title
         title.text = slide_info['title']
@@ -1444,11 +1495,9 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
             title.text_frame.paragraphs[0].font.bold = True
             if "title_font" in theme:
                 title.text_frame.paragraphs[0].font.name = theme["title_font"]
-        
-        # Add logo if provided
-        if branding_options and branding_options.get('logo_path'):
-            add_logo_to_slide(slide, branding_options['logo_path'], 
-                            branding_options.get('logo_position', 'top-right'))
+            
+            # Add decorative line under title
+            add_title_separator(slide, title, theme["accent"])
         
         # Set content based on layout
         if layout_idx == 3:  # Two column layout
@@ -1471,7 +1520,8 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
                     point_text = point.replace('- ', '').strip()
                     p.text = point_text
                     p.level = 0
-                    p.alignment = PP_ALIGN.JUSTIFY 
+                    p.alignment = PP_ALIGN.JUSTIFY
+                    p.space_after = Pt(12)
                     if "template_path" not in theme:  # Only apply custom formatting if no template
                         p.font.color.rgb = theme["text_color"]
                         p.font.size = Pt(18)
@@ -1488,7 +1538,8 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
                 point_text = point.replace('- ', '').strip()
                 p.text = point_text
                 p.level = 0
-                p.alignment = PP_ALIGN.JUSTIFY 
+                p.alignment = PP_ALIGN.JUSTIFY
+                p.space_after = Pt(12)
                 if "template_path" not in theme:  # Only apply custom formatting if no template
                     p.font.color.rgb = theme["text_color"]
                     p.font.size = Pt(18)
@@ -1506,6 +1557,11 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None):
         section_slide = prs.slides.add_slide(prs.slide_layouts[2])  # Section header layout
         section_title = section_slide.shapes.title
         section_title.text = "Knowledge Check"
+        
+        # Format section header
+        if "template_path" not in theme:
+            section_title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+            section_title.text_frame.paragraphs[0].font.size = Pt(44)
         
         # Add each question on a separate slide
         for i, question in enumerate(questions, 1):
@@ -1613,6 +1669,8 @@ def main():
                     
                     # Show slide overview with detailed content
                     with st.expander("Slide Overview (Detailed)"):
+                        st.markdown(f"**Total Slides:** {len(slides_data)} content slides + {len(questionnaire)} question slides + 1 answer key slide")
+                        
                         for i, slide in enumerate(slides_data, 1):
                             st.subheader(f"Slide {i}: {slide['title']}")
                             st.markdown("**Content:**")
@@ -1624,6 +1682,7 @@ def main():
                         
                         if questionnaire:
                             st.subheader("Questionnaire")
+                            st.markdown(f"**Total Questions:** {len(questionnaire)}")
                             for i, q in enumerate(questionnaire, 1):
                                 st.subheader(f"Question {i}")
                                 st.markdown(f"**{q['text']}**")
