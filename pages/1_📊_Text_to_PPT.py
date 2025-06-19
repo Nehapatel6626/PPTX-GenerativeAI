@@ -1325,7 +1325,7 @@ def add_title_separator(slide, title_shape, accent_color):
     line.line.fill.background()
 
 def create_question_slide(prs, question, question_num, theme):
-    """Create a slide for a single question"""
+    """Create a slide for a single question with proper theme support"""
     # Try to use Title + Content layout, fallback to blank if not available
     try:
         slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
@@ -1338,27 +1338,32 @@ def create_question_slide(prs, question, question_num, theme):
             sp = shape._element
             sp.getparent().remove(sp)
     
+    # Apply background if using custom theme
+    if "template_path" not in theme:
+        background = slide.background
+        fill = background.fill
+        fill.solid()
+        fill.fore_color.rgb = theme["background"]
+    
     # Set title
     title = slide.shapes.title if hasattr(slide.shapes, 'title') else None
     if title:
         title.text = f"Question {question_num}"
+        if "template_path" not in theme:
+            title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+            title.text_frame.paragraphs[0].font.size = Pt(36)
+            title.text_frame.paragraphs[0].font.bold = True
+            if "title_font" in theme:
+                title.text_frame.paragraphs[0].font.name = theme["title_font"]
+            
+            # Add decorative line under title
+            add_title_separator(slide, title, theme["accent"])
     
-    # Only apply custom formatting if not using a template
-    if "template_path" not in theme and title:
-        title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
-        title.text_frame.paragraphs[0].font.size = Pt(36)
-        title.text_frame.paragraphs[0].font.bold = True
-        if "title_font" in theme:
-            title.text_frame.paragraphs[0].font.name = theme["title_font"]
-        
-        # Add decorative line under title
-        add_title_separator(slide, title, theme["accent"])
-    
-    # Create content
+    # Create content area with proper spacing
     left = Inches(1)
     top = Inches(2) if title else Inches(0.5)
     width = prs.slide_width - Inches(2)
-    height = prs.slide_height - Inches(3)
+    height = prs.slide_height - top - Inches(1)  # Leave 1 inch at bottom
     
     content_box = slide.shapes.add_textbox(left, top, width, height)
     tf = content_box.text_frame
@@ -1370,14 +1375,14 @@ def create_question_slide(prs, question, question_num, theme):
     p.font.bold = True
     p.space_after = Pt(24)
     
-    # Only apply custom formatting if not using a template
+    # Apply text formatting
     if "template_path" not in theme:
         p.font.color.rgb = theme["text_color"]
         p.font.size = Pt(24)
         if "text_font" in theme:
             p.font.name = theme["text_font"]
     
-    # Add options
+    # Add options with proper spacing
     for j, opt in enumerate(question['options']):
         p = tf.add_paragraph()
         p.text = f"{chr(65+j)}. {opt}"
@@ -1385,7 +1390,7 @@ def create_question_slide(prs, question, question_num, theme):
         p.space_before = Pt(12)
         p.space_after = Pt(12)
         
-        # Only apply custom formatting if not using a template
+        # Apply text formatting
         if "template_path" not in theme:
             p.font.color.rgb = theme["text_color"]
             p.font.size = Pt(20)
@@ -1402,12 +1407,19 @@ def create_question_slide(prs, question, question_num, theme):
     return slide
 
 def create_answer_key_slide(prs, questions, theme):
-    """Create answer key slide with all correct answers"""
+    """Create answer key slide with proper theme support"""
     # Try to use Title + Content layout, fallback to blank if not available
     try:
         slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
     except IndexError:
         slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank layout
+    
+    # Apply background if using custom theme
+    if "template_path" not in theme:
+        background = slide.background
+        fill = background.fill
+        fill.solid()
+        fill.fore_color.rgb = theme["background"]
     
     # Remove unused placeholders
     for shape in slide.shapes:
@@ -1419,23 +1431,21 @@ def create_answer_key_slide(prs, questions, theme):
     title = slide.shapes.title if hasattr(slide.shapes, 'title') else None
     if title:
         title.text = "Answer Key"
+        if "template_path" not in theme:
+            title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
+            title.text_frame.paragraphs[0].font.size = Pt(36)
+            title.text_frame.paragraphs[0].font.bold = True
+            if "title_font" in theme:
+                title.text_frame.paragraphs[0].font.name = theme["title_font"]
+            
+            # Add decorative line under title
+            add_title_separator(slide, title, theme["accent"])
     
-    # Only apply custom formatting if not using a template
-    if "template_path" not in theme and title:
-        title.text_frame.paragraphs[0].font.color.rgb = theme["accent"]
-        title.text_frame.paragraphs[0].font.size = Pt(36)
-        title.text_frame.paragraphs[0].font.bold = True
-        if "title_font" in theme:
-            title.text_frame.paragraphs[0].font.name = theme["title_font"]
-        
-        # Add decorative line under title
-        add_title_separator(slide, title, theme["accent"])
-    
-    # Create content
+    # Create content area with proper spacing
     left = Inches(1.5)
     top = Inches(2) if title else Inches(0.5)
     width = prs.slide_width - Inches(3)
-    height = prs.slide_height - Inches(3)
+    height = prs.slide_height - top - Inches(1)  # Leave 1 inch at bottom
     
     content_box = slide.shapes.add_textbox(left, top, width, height)
     tf = content_box.text_frame
@@ -1448,7 +1458,7 @@ def create_answer_key_slide(prs, questions, theme):
         p.level = 0
         p.space_after = Pt(18)
         
-        # Only apply custom formatting if not using a template
+        # Apply text formatting
         if "template_path" not in theme:
             p.font.color.rgb = theme["text_color"]
             p.font.size = Pt(24)
@@ -1496,6 +1506,13 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
         except IndexError:
             slide = prs.slides.add_slide(prs.slide_layouts[default_layout_idx])
         
+        # Apply background if using custom theme
+        if "template_path" not in theme:
+            background = slide.background
+            fill = background.fill
+            fill.solid()
+            fill.fore_color.rgb = theme["background"]
+        
         # Remove unused placeholders
         for shape in slide.shapes:
             if shape.has_text_frame and not shape.text.strip():
@@ -1539,14 +1556,6 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             if "title_color" in theme:
                 p.font.color.rgb = theme["title_color"]
         
-        # Only apply custom formatting if not using a template
-        if "template_path" not in theme:
-            # Apply background
-            background = slide.background
-            fill = background.fill
-            fill.solid()
-            fill.fore_color.rgb = theme["background"]
-        
         # Set content based on layout
         if layout == 'two-column':
             content = slide_info.get('content', [])
@@ -1556,9 +1565,9 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             
             # Create left column
             left = Inches(0.5)
-            top = Inches(2)
+            top = Inches(1.5)
             width = prs.slide_width / 2 - Inches(1)
-            height = prs.slide_height - Inches(3)
+            height = prs.slide_height - Inches(2.5)  # Leave space at bottom
             left_box = slide.shapes.add_textbox(left, top, width, height)
             left_tf = left_box.text_frame
             
@@ -1584,9 +1593,9 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
         elif layout != 'title-only':  # Content slides
             # Create content area
             left = Inches(1)
-            top = Inches(2)
+            top = Inches(1.5)
             width = prs.slide_width - Inches(2)
-            height = prs.slide_height - Inches(3)
+            height = prs.slide_height - Inches(2.5)  # Leave space at bottom
             content_box = slide.shapes.add_textbox(left, top, width, height)
             tf = content_box.text_frame
             
@@ -1609,13 +1618,20 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             if hasattr(notes_slide, 'notes_text_frame'):
                 notes_slide.notes_text_frame.text = slide_info['notes']
     
-    # Add question slides (one per question)
+    # Add question slides (one per question) with consistent theme
     if questions:
-        # Add section header
+        # Add section header with consistent theme
         try:
             section_slide = prs.slides.add_slide(prs.slide_layouts[2])  # Section header layout
         except IndexError:
             section_slide = prs.slides.add_slide(prs.slide_layouts[0])  # Fallback to title slide
+        
+        # Apply background if using custom theme
+        if "template_path" not in theme:
+            background = section_slide.background
+            fill = background.fill
+            fill.solid()
+            fill.fore_color.rgb = theme["background"]
         
         title_placeholder = section_slide.shapes.title if hasattr(section_slide.shapes, 'title') else None
         if title_placeholder is not None:
