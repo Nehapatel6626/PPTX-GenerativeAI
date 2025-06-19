@@ -1025,8 +1025,8 @@ import tempfile
 import os
 from PIL import Image
 import time
-import json
-from hashlib import sha256
+import textwrap
+import math
 
 # Load the API key securely from environment variable
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -1043,7 +1043,8 @@ DEFAULT_THEMES = {
         "text_color": RGBColor(200, 200, 200),
         "accent": RGBColor(0, 112, 192),
         "title_font": "Calibri",
-        "text_font": "Calibri"
+        "text_font": "Calibri",
+        "min_font_size": 14
     },
     "Modern Green": {
         "background": RGBColor(22, 82, 66),
@@ -1051,7 +1052,8 @@ DEFAULT_THEMES = {
         "text_color": RGBColor(220, 220, 220),
         "accent": RGBColor(76, 175, 80),
         "title_font": "Arial",
-        "text_font": "Arial"
+        "text_font": "Arial",
+        "min_font_size": 14
     },
     "Light Corporate": {
         "background": RGBColor(255, 255, 255),
@@ -1059,7 +1061,8 @@ DEFAULT_THEMES = {
         "text_color": RGBColor(33, 33, 33),
         "accent": RGBColor(25, 118, 210),
         "title_font": "Segoe UI",
-        "text_font": "Segoe UI"
+        "text_font": "Segoe UI",
+        "min_font_size": 14
     },
     "Dark Tech": {
         "background": RGBColor(33, 33, 33),
@@ -1067,7 +1070,8 @@ DEFAULT_THEMES = {
         "text_color": RGBColor(200, 200, 200),
         "accent": RGBColor(0, 150, 255),
         "title_font": "Consolas",
-        "text_font": "Consolas"
+        "text_font": "Consolas",
+        "min_font_size": 14
     }
 }
 
@@ -1097,6 +1101,7 @@ def extract_theme_from_pptx(uploaded_file):
         "accent": RGBColor(79, 129, 189),       # Default blue
         "title_font": "Calibri",
         "text_font": "Calibri",
+        "min_font_size": 14,
         "template_path": tmp_file_path  # Store the template path for later use
     }
     
@@ -1324,19 +1329,53 @@ def add_title_separator(slide, title_shape, accent_color):
     fill.fore_color.rgb = accent_color
     line.line.fill.background()
 
+def smart_text_wrap(text, max_width=100):
+    """Wrap text intelligently at sentence boundaries when possible"""
+    if len(text) <= max_width:
+        return [text]
+    
+    # Try to split at sentence boundaries
+    sentences = re.split(r'(?<=[.!?]) +', text)
+    lines = []
+    current_line = ""
+    
+    for sentence in sentences:
+        if len(current_line) + len(sentence) + 1 <= max_width:
+            current_line += (sentence + " ") if current_line else sentence
+        else:
+            if current_line:
+                lines.append(current_line.strip())
+            current_line = sentence
+    
+    if current_line:
+        lines.append(current_line.strip())
+    
+    # If we didn't split into sentences, do regular word wrap
+    if len(lines) == 1 and len(text) > max_width:
+        return textwrap.wrap(text, max_width)
+    
+    return lines
+
+def calculate_optimal_font_size(text, max_width, max_height, initial_size=18):
+    """Calculate optimal font size to fit text in specified dimensions"""
+    # Estimate based on character count
+    char_count = len(text)
+    if char_count < 100:
+        return initial_size
+    elif char_count < 200:
+        return max(initial_size - 2, 14)
+    elif char_count < 300:
+        return max(initial_size - 4, 12)
+    else:
+        return max(initial_size - 6, 10)
+
 def create_question_slide(prs, question, question_num, theme):
-    """Create a slide for a single question with proper theme support"""
+    """Create a slide for a single question with proper text wrapping"""
     # Try to use Title + Content layout, fallback to blank if not available
     try:
         slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
     except IndexError:
         slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank layout
-    
-    # Remove unused placeholders
-    for shape in slide.shapes:
-        if shape.has_text_frame and not shape.text.strip():
-            sp = shape._element
-            sp.getparent().remove(sp)
     
     # Apply background if using custom theme
     if "template_path" not in theme:
@@ -1344,6 +1383,12 @@ def create_question_slide(prs, question, question_num, theme):
         fill = background.fill
         fill.solid()
         fill.fore_color.rgb = theme["background"]
+    
+    # Remove unused placeholders
+    for shape in slide.shapes:
+        if shape.has_text_frame and not shape.text.strip():
+            sp = shape._element
+            sp.getparent().remove(sp)
     
     # Set title
     title = slide.shapes.title if hasattr(slide.shapes, 'title') else None
@@ -1369,18 +1414,25 @@ def create_question_slide(prs, question, question_num, theme):
     tf = content_box.text_frame
     tf.word_wrap = True
     
-    # Add question text
-    p = tf.add_paragraph()
-    p.text = question['text']
-    p.font.bold = True
-    p.space_after = Pt(24)
+    # Add question text with smart wrapping
+    question_text = question['text']
+    wrapped_question = smart_text_wrap(question_text, 100)
     
-    # Apply text formatting
-    if "template_path" not in theme:
-        p.font.color.rgb = theme["text_color"]
-        p.font.size = Pt(24)
-        if "text_font" in theme:
-            p.font.name = theme["text_font"]
+    # Calculate optimal font size
+    font_size = calculate_optimal_font_size(question_text, width, height, 24)
+    
+    for line in wrapped_question:
+        p = tf.add_paragraph()
+        p.text = line
+        p.font.bold = True
+        p.space_after = Pt(12)
+        
+        # Apply text formatting
+        if "template_path" not in theme:
+            p.font.color.rgb = theme["text_color"]
+            p.font.size = Pt(font_size)
+            if "text_font" in theme:
+                p.font.name = theme["text_font"]
     
     # Add options with proper spacing
     for j, opt in enumerate(question['options']):
@@ -1393,7 +1445,7 @@ def create_question_slide(prs, question, question_num, theme):
         # Apply text formatting
         if "template_path" not in theme:
             p.font.color.rgb = theme["text_color"]
-            p.font.size = Pt(20)
+            p.font.size = Pt(font_size - 4)  # Slightly smaller for options
             if "text_font" in theme:
                 p.font.name = theme["text_font"]
     
@@ -1407,7 +1459,7 @@ def create_question_slide(prs, question, question_num, theme):
     return slide
 
 def create_answer_key_slide(prs, questions, theme):
-    """Create answer key slide with proper theme support"""
+    """Create answer key slide with proper text wrapping"""
     # Try to use Title + Content layout, fallback to blank if not available
     try:
         slide = prs.slides.add_slide(prs.slide_layouts[1])  # Title + Content layout
@@ -1565,9 +1617,9 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             
             # Create left column
             left = Inches(0.5)
-            top = Inches(1.5)
+            top = Inches(1.8)  # Increased top margin
             width = prs.slide_width / 2 - Inches(1)
-            height = prs.slide_height - Inches(2.5)  # Leave space at bottom
+            height = prs.slide_height - top - Inches(1)  # Leave space at bottom
             left_box = slide.shapes.add_textbox(left, top, width, height)
             left_tf = left_box.text_frame
             
@@ -1578,39 +1630,51 @@ def create_detailed_pptx(slides_data, questions, theme, branding_options=None, p
             
             for content_part, tf in [(left_content, left_tf), (right_content, right_tf)]:
                 for point in content_part:
-                    p = tf.add_paragraph()
-                    point_text = point.replace('- ', '').strip()
-                    p.text = point_text
-                    p.level = 0
-                    p.alignment = PP_ALIGN.JUSTIFY
-                    p.space_after = Pt(12)
-                    if "template_path" not in theme:  # Only apply custom formatting if no template
-                        p.font.color.rgb = theme["text_color"]
-                        p.font.size = Pt(18)
-                        if "text_font" in theme:
-                            p.font.name = theme["text_font"]
+                    # Wrap text to prevent overflow
+                    wrapped_text = smart_text_wrap(point, 100)
+                    
+                    # Calculate optimal font size
+                    font_size = calculate_optimal_font_size(point, width, height, 18)
+                    
+                    for line in wrapped_text:
+                        p = tf.add_paragraph()
+                        p.text = line
+                        p.level = 0
+                        p.alignment = PP_ALIGN.JUSTIFY
+                        p.space_after = Pt(8)  # Reduced space between lines
+                        if "template_path" not in theme:  # Only apply custom formatting if no template
+                            p.font.color.rgb = theme["text_color"]
+                            p.font.size = Pt(font_size)
+                            if "text_font" in theme:
+                                p.font.name = theme["text_font"]
         
         elif layout != 'title-only':  # Content slides
             # Create content area
             left = Inches(1)
-            top = Inches(1.5)
+            top = Inches(1.8)  # Increased top margin
             width = prs.slide_width - Inches(2)
-            height = prs.slide_height - Inches(2.5)  # Leave space at bottom
+            height = prs.slide_height - top - Inches(1)  # Leave space at bottom
             content_box = slide.shapes.add_textbox(left, top, width, height)
             tf = content_box.text_frame
             
             for point in slide_info.get('content', []):
-                p = tf.add_paragraph()
-                point_text = point.replace('- ', '').strip()
-                p.text = point_text
-                p.level = 0
-                p.alignment = PP_ALIGN.JUSTIFY
-                p.space_after = Pt(12)
-                if "template_path" not in theme:  # Only apply custom formatting if no template
-                    p.font.color.rgb = theme["text_color"]
-                    p.font.size = Pt(18)
-                    if "text_font" in theme:
-                        p.font.name = theme["text_font"]
+                # Wrap text to prevent overflow
+                wrapped_text = smart_text_wrap(point, 100)
+                
+                # Calculate optimal font size
+                font_size = calculate_optimal_font_size(point, width, height, 18)
+                
+                for line in wrapped_text:
+                    p = tf.add_paragraph()
+                    p.text = line
+                    p.level = 0
+                    p.alignment = PP_ALIGN.JUSTIFY
+                    p.space_after = Pt(8)  # Reduced space between lines
+                    if "template_path" not in theme:  # Only apply custom formatting if no template
+                        p.font.color.rgb = theme["text_color"]
+                        p.font.size = Pt(font_size)
+                        if "text_font" in theme:
+                            p.font.name = theme["text_font"]
         
         # Add notes if available
         if slide_info.get('notes') and hasattr(slide, 'notes_slide'):
@@ -1666,7 +1730,7 @@ def regenerate_slide(slide_index, topic, slide_count, theme, ppt_version):
     Please regenerate only slide number {slide_index+1} with the same structure as the others.
     The slide should have:
     - A clear title in [Title:] format
-    - 3-5 detailed bullet points in [Content:] format
+    - 3-5 detailed bullet points in [Content:] format (each point should be concise, 1-2 lines max)
     - Optional speaker notes in [Notes:] format
     - Layout suggestion in [Layout:] format
     
@@ -1674,11 +1738,11 @@ def regenerate_slide(slide_index, topic, slide_count, theme, ppt_version):
     [Title:] Slide Title
     [Layout:] layout-type
     [Content:]
-    - Point 1
-    - Point 2
+    - Point 1: Concise point
+    - Point 2: Another concise point
     [Notes:] Optional notes
     
-    Make sure the content is relevant to the overall topic and flows with the presentation.
+    Make sure the content is concise and fits on a single slide. Avoid long paragraphs.
     """
     
     response = model.generate_content(prompt)
@@ -1762,6 +1826,7 @@ def main():
                         accent_color = st.color_picker("Accent Color", "#0070C0")
                         title_font = st.text_input("Title Font", "Calibri")
                         text_font = st.text_input("Text Font", "Calibri")
+                        min_font_size = st.slider("Minimum Font Size", 10, 18, 14)
                         
                         if st.form_submit_button("Save Custom Theme"):
                             if new_theme_name:
@@ -1771,7 +1836,8 @@ def main():
                                     "text_color": hex_to_rgb(text_color),
                                     "accent": hex_to_rgb(accent_color),
                                     "title_font": title_font,
-                                    "text_font": text_font
+                                    "text_font": text_font,
+                                    "min_font_size": min_font_size
                                 }
                                 st.success(f"Theme '{new_theme_name}' saved successfully!")
                             else:
