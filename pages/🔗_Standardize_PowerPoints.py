@@ -62,42 +62,52 @@ def standardize_ppt(source_path, target_path, output_path):
     target.save(output_path)
 
 # Streamlit UI
-st.title("Professional PPT Standardizer")
-st.markdown("""
-1. **Source PPT**: Your content (will be reformatted)
-2. **Target PPT**: Design template (provides theme/fonts)
+st.set_page_config(page_title="PPT Standardizer Pro", layout="wide")
+st.title("🎯 PowerPoint Standardizer Pro")
+
+col1, col2 = st.columns(2)
+with col1:
+    source_ppt = st.file_uploader("Upload Content PPT", type=["pptx"])
+with col2:
+    target_ppt = st.file_uploader("Upload Design Template PPT", type=["pptx"])
+
+if st.button("✨ Standardize Presentation", type="primary"):
+    if source_ppt and target_ppt:
+        with st.spinner("Creating professionally formatted slides..."):
+            # Save temp files
+            source_path = "temp_source.pptx"
+            target_path = "temp_target.pptx"
+            with open(source_path, "wb") as f:
+                f.write(source_ppt.getvalue())
+            with open(target_path, "wb") as f:
+                f.write(target_ppt.getvalue())
+            
+            # Process files
+            output_path = "professional_output.pptx"
+            standardize_ppt(source_path, target_path, output_path)
+            
+            # Show download button
+            with open(output_path, "rb") as f:
+                ppt_bytes = f.read()
+            
+            st.success("Formatting complete!")
+            st.download_button(
+                label="⬇️ Download Professional PPT",
+                data=ppt_bytes,
+                file_name="formatted_presentation.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            )
+            
+            # Clean up temp files
+            os.remove(source_path)
+            os.remove(target_path)
+    else:
+        st.warning("Please upload both files to proceed")
+
+st.sidebar.markdown("""
+### Key Features:
+- **Perfect Layout Adaptation**
+- **Automatic Text Formatting**
+- **Theme Consistency**
+- **Professional Output**
 """)
-
-source_ppt = st.file_uploader("Upload Source PPT", type=["pptx"])
-target_ppt = st.file_uploader("Upload Target PPT", type=["pptx"])
-
-if st.button("Generate Professional PPT") and source_ppt and target_ppt:
-    with st.spinner("Creating perfectly formatted presentation..."):
-        # Save temp files
-        source_path = "temp_source.pptx"
-        target_path = "temp_target.pptx"
-        with open(source_path, "wb") as f:
-            source_ppt.seek(0)
-            f.write(source_ppt.read())
-        with open(target_path, "wb") as f:
-            target_ppt.seek(0)
-            f.write(target_ppt.read())
-        
-        # Process
-        output_path = "professional_output.pptx"
-        standardize_ppt(source_path, target_path, output_path)
-        
-        # Download
-        with open(output_path, "rb") as f:
-            ppt_bytes = f.read()
-        st.success("Done! Your content is now professionally formatted.")
-        st.download_button(
-            "Download PPT",
-            data=ppt_bytes,
-            file_name="formatted_presentation.pptx",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
-        )
-        
-        # Cleanup
-        os.remove(source_path)
-        os.remove(target_path)
