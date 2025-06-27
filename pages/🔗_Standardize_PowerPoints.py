@@ -1,154 +1,103 @@
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.util import Pt, Inches
+from pptx.enum.text import PP_ALIGN
 import streamlit as st
-import base64
 import os
 
-def clean_slide(slide):
-    """Remove all placeholder shapes from a slide (updated for python-pptx 0.6.21+)"""
-    shapes_to_remove = []
-    for shape in slide.shapes:
-        try:
-            if shape.is_placeholder:
-                shapes_to_remove.append(shape)
-        except AttributeError:
-            continue
+def adjust_text_frame(text_frame, target_font):
+    """Ensure text fits within slide boundaries"""
+    for paragraph in text_frame.paragraphs:
+        paragraph.alignment = PP_ALIGN.LEFT
+        paragraph.font.name = target_font
+        paragraph.font.size = Pt(12)  # Standard font size
+        paragraph.space_after = Pt(0)
     
-    for shape in shapes_to_remove:
-        sp = shape._element
-        sp.getparent().remove(sp)
+    # Shrink text if needed
+    if len(text_frame.text) > 500:  # Arbitrary threshold for long text
+        for paragraph in text_frame.paragraphs:
+            paragraph.font.size = Pt(10)
 
-def get_closest_layout(source_slide, target_ppt):
-    """Match source slide layout to target's closest layout"""
-    if not source_slide.slide_layout.name:  # Handle unnamed layouts
-        return target_ppt.slide_layouts[1]
+def standardize_ppt(source_path, target_path, output_path):
+    """Improved standardization with proper layout handling"""
+    source = Presentation(source_path)
+    target = Presentation(target_path)
     
-    source_layout_name = source_slide.slide_layout.name.lower()
-    layout_priority = [
-        "title", 
-        "content",
-        "section header",
-        "blank"
-    ]
-    
-    # Try prioritized matches first
-    for layout_type in layout_priority:
-        if layout_type in source_layout_name:
-            for layout in target_ppt.slide_layouts:
-                if layout_type in layout.name.lower():
-                    return layout
-    
-    # Fallback to first content layout
-    return target_ppt.slide_layouts[1]
-
-def standardize_ppt(source_file, target_file, output_path):
-    """Transfer content while strictly following target theme"""
-    source = Presentation(source_file)
-    target = Presentation(target_file)
+    # Get target theme properties
+    target_font = target.slide_master.theme.fonts.latin_typeface
+    margin = Inches(0.5)  # Standard margin
     
     for source_slide in source.slides:
-        # Create new slide with matching layout
-        layout = get_closest_layout(source_slide, target)
-        new_slide = target.slides.add_slide(layout)
+        # Create blank slide in target presentation
+        blank_slide_layout = target.slide_layouts[6]  # Blank layout
+        new_slide = target.slides.add_slide(blank_slide_layout)
         
-        # Remove all default placeholders
-        clean_slide(new_slide)
+        # Calculate available space
+        slide_width = target.slide_width - (2 * margin)
+        left_pos = margin
         
-        # Clone all content from source
+        # Add title if exists
+        if source_slide.shapes.title:
+            title = new_slide.shapes.add_textbox(
+                left_pos, margin, slide_width, Inches(0.8)
+            title.text = source_slide.shapes.title.text
+            adjust_text_frame(title.text_frame, target_font)
+            top_pos = margin + Inches(1)
+        else:
+            top_pos = margin
+        
+        # Add content with proper spacing
+        content_height = target.slide_height - top_pos - margin
+        content = new_slide.shapes.add_textbox(
+            left_pos, top_pos, slide_width, content_height)
+        
+        # Aggregate all text content
+        all_text = []
         for shape in source_slide.shapes:
-            try:
-                if shape.has_text_frame:
-                    new_shape = new_slide.shapes.add_textbox(
-                        shape.left, shape.top, shape.width, shape.height
-                    )
-                    new_shape.text_frame.text = shape.text_frame.text
-                    
-                    # Apply theme fonts
-                    if hasattr(target.slide_master, 'theme'):
-                        font = target.slide_master.theme.fonts.latin_typeface
-                        for paragraph in new_shape.text_frame.paragraphs:
-                            paragraph.font.name = font
-                            if shape.text_frame.paragraphs:
-                                paragraph.font.size = shape.text_frame.paragraphs[0].font.size
-                
-                elif shape.has_table:
-                    # Copy tables with formatting
-                    table = shape.table
-                    new_table = new_slide.shapes.add_table(
-                        table.rows.count, table.columns.count,
-                        shape.left, shape.top, shape.width, shape.height
-                    ).table
-                    # Copy cell content
-                    for i in range(table.rows.count):
-                        for j in range(table.columns.count):
-                            new_table.cell(i,j).text = table.cell(i,j).text
-            except Exception as e:
-                print(f"Skipping shape due to error: {e}")
-                continue
+            if shape.has_text_frame and shape != source_slide.shapes.title:
+                all_text.append(shape.text)
+        
+        content.text = "\n\n".join(all_text)  # Double line breaks between sections
+        adjust_text_frame(content.text_frame, target_font)
     
     target.save(output_path)
 
 # Streamlit UI
-st.set_page_config(page_title="PowerPoint Standardizer Pro", layout="wide")
-st.title("🎯 PowerPoint Standardizer Pro")
+st.title("Professional PPT Standardizer")
 st.markdown("""
-<div style="background-color:#f0f2f6;padding:20px;border-radius:10px">
-    <h3 style="color:#1e3a8a">Professional PPT Formatting</h3>
-    <ol>
-        <li><b>Source PPT</b>: Your content (no formatting needed)</li>
-        <li><b>Target PPT</b>: Design template (theme/layouts)</li>
-    </ol>
-</div>
-""", unsafe_allow_html=True)
+1. **Source PPT**: Your content (will be reformatted)
+2. **Target PPT**: Design template (provides theme/fonts)
+""")
 
-col1, col2 = st.columns(2)
-with col1:
-    source_ppt = st.file_uploader("Upload Content PPT", type=["pptx"], help="Your slides with content to be formatted")
-with col2:
-    target_ppt = st.file_uploader("Upload Design Template PPT", type=["pptx"], help="PPT with desired theme/layouts")
+source_ppt = st.file_uploader("Upload Source PPT", type=["pptx"])
+target_ppt = st.file_uploader("Upload Target PPT", type=["pptx"])
 
-if st.button("✨ Standardize Presentation", type="primary"):
-    if source_ppt and target_ppt:
-        with st.spinner("Rebuilding slides with professional formatting..."):
-            # Save temp files
-            source_path = "temp_source.pptx"
-            target_path = "temp_target.pptx"
-            with open(source_path, "wb") as f:
-                f.write(source_ppt.getbuffer())
-            with open(target_path, "wb") as f:
-                f.write(target_ppt.getbuffer())
-            
-            # Process files
-            output_path = "professional_output.pptx"
-            standardize_ppt(source_path, target_path, output_path)
-            
-            # Show download button
-            with open(output_path, "rb") as f:
-                ppt_bytes = f.read()
-            
-            st.success("Formatting complete! Your presentation is now ready.")
-            st.download_button(
-                label="⬇️ Download Professional PPT",
-                data=ppt_bytes,
-                file_name="professional_presentation.pptx",
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                type="primary"
-            )
-            
-            # Clean up temp files
-            os.remove(source_path)
-            os.remove(target_path)
-    else:
-        st.warning("Please upload both files to proceed")
-
-# Features list
-st.sidebar.markdown("""
-### 🚀 Premium Features:
-- **100% Theme Compliance**  
-- **Smart Layout Detection**  
-- **Automatic Font Matching**  
-- **Table/Chart Preservation**  
-- **Placeholder-Free Output**  
-
-<small>Works with PowerPoint 2013+ files</small>
-""", unsafe_allow_html=True)
+if st.button("Generate Professional PPT") and source_ppt and target_ppt:
+    with st.spinner("Creating perfectly formatted presentation..."):
+        # Save temp files
+        source_path = "temp_source.pptx"
+        target_path = "temp_target.pptx"
+        with open(source_path, "wb") as f:
+            source_ppt.seek(0)
+            f.write(source_ppt.read())
+        with open(target_path, "wb") as f:
+            target_ppt.seek(0)
+            f.write(target_ppt.read())
+        
+        # Process
+        output_path = "professional_output.pptx"
+        standardize_ppt(source_path, target_path, output_path)
+        
+        # Download
+        with open(output_path, "rb") as f:
+            ppt_bytes = f.read()
+        st.success("Done! Your content is now professionally formatted.")
+        st.download_button(
+            "Download PPT",
+            data=ppt_bytes,
+            file_name="formatted_presentation.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        )
+        
+        # Cleanup
+        os.remove(source_path)
+        os.remove(target_path)
