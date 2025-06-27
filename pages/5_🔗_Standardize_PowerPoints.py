@@ -39,6 +39,7 @@ def standardize_ppt(source_path, target_path, output_path):
         if source_slide.shapes.title:
             title = new_slide.shapes.add_textbox(
                 left_pos, margin, slide_width, Inches(0.8)
+            )  # Fixed: Properly closed parenthesis
             title.text = source_slide.shapes.title.text
             adjust_text_frame(title.text_frame, target_font)
             top_pos = margin + Inches(1)
@@ -48,7 +49,8 @@ def standardize_ppt(source_path, target_path, output_path):
         # Add content with proper spacing
         content_height = target.slide_height - top_pos - margin
         content = new_slide.shapes.add_textbox(
-            left_pos, top_pos, slide_width, content_height)
+            left_pos, top_pos, slide_width, content_height
+        )  # Fixed: Properly closed parenthesis
         
         # Aggregate all text content
         all_text = []
