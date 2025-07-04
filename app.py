@@ -16,7 +16,7 @@ The **Document Generator** is a powerful Streamlit app designed to simplify docu
 - **Text to PDF**: Convert your text into beautifully formatted PDF documents.
 - **Text to Word**: Generate Word documents from your text for easy editing and sharing.
 - **Pexels Image Search**: Search for high-quality images from Pexels and download them directly for your projects.
-- **Standardize_PowerPoints : Smart PPTX Styler with AI Layout & Clean Formatting.
+- **Standardize_PowerPoints** : Smart PPTX Styler with AI Layout & Clean Formatting.
 
 Get started by exploring these features in the full application!
 """)
