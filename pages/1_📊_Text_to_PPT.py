@@ -1127,7 +1127,7 @@ def extract_theme_from_pptx(uploaded_file):
     return theme
 
 def generate_slide_content(topic, slide_count):
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-3-flash')
     prompt = f"""Create a comprehensive presentation on '{topic}' with exactly {slide_count} slides. 
     For each slide, provide:
     1. A clear title in [Title:] format
