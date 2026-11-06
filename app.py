@@ -2,8 +2,7 @@ import streamlit as st
 
 # Set page config
 st.set_page_config(page_title="Document Generator", layout="wide")
-st.image("https://huggingface.co/spaces/YashMK89/PPTX_generativeai/resolve/main/SVNIT_IS_DS_Projects.png", width=150)
-
+st.image("SVNIT logo.png", width=150)
 # Introduction Page
 st.title("Welcome to Document Generator")
 st.write("Your one-stop tool for creating documents and finding images with ease!")
