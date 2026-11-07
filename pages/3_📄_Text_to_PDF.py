@@ -108,7 +108,7 @@ def extract_theme_from_docx(uploaded_file):
     return theme
 
 def generate_document_content(topic, page_count):
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    model = genai.GenerativeModel('gemini-3.5-flash-lite')
     prompt = f"""Create a comprehensive document on '{topic}' with exactly {page_count} pages. 
     For each page, provide:
     1. A clear title in [Title:] format
